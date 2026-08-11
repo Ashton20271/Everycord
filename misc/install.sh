@@ -1,11 +1,21 @@
 #!/bin/bash
 
+# Guard against accidental execution on Windows/MSYS/Cygwin
+if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]] || \
+   [[ "$(uname -s)" =~ ^(CYGWIN|MINGW|MSYS|Windows_NT) ]]; then
+    echo "This installer is for Linux. Windows users should download OpenCordInstaller.exe or OpenCordInstallerCli.exe from https://github.com/MasuRii/OpenCord/releases/latest/download/"
+    exit 1
+fi
+
 # Configuration
-INSTALLER_PATH="$HOME/.equilotl"
-GITHUB_URL="https://github.com/Equicord/Equilotl/releases/latest/download/EquilotlCli-Linux"
+INSTALLER_PATH="$HOME/.opencord-installer"
+GITHUB_URL="https://github.com/MasuRii/OpenCord/releases/latest/download/OpenCordCli-linux"
+OPENCORD_ASAR_URL="https://github.com/MasuRii/OpenCord/releases/latest/download/desktop.asar"
+OPENCORD_DATA_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/OpenCord"
+OPENCORD_ASAR_PATH="$OPENCORD_DATA_DIR/opencord.asar"
 PRIVILEGE_CMDS=("sudo" "doas")
 DEBUG=false
-LOG_FILE="$(dirname "$(realpath "$0")")/equicordinstalldebug.log"
+LOG_FILE="$(dirname "$(realpath "$0")")/opencordinstalldebug.log"
 
 # Colors for output
 RED='\033[0;31m'
@@ -54,7 +64,7 @@ check_for_updates() {
     fi
 
     local latest_modified local_modified
-    if ! latest_modified=$(curl -sI "$GITHUB_URL" | grep -i "last-modified" | cut -d' ' -f2-); then
+    if ! latest_modified=$(curl -sIL "$GITHUB_URL" | grep -i "last-modified" | cut -d' ' -f2-); then
         echo -e "${YELLOW}Warning: Could not fetch last modified date from GitHub. Using existing installer.${NC}"
         return
     fi
@@ -74,6 +84,15 @@ check_for_updates() {
         esac
     else
         echo -e "${GREEN}Installer is up-to-date.${NC}"
+    fi
+}
+
+# Download OpenCord build
+install_opencord_build() {
+    echo -e "${YELLOW}Downloading latest OpenCord build...${NC}"
+    mkdir -p "$OPENCORD_DATA_DIR" || error "Failed to create OpenCord data directory"
+    if ! curl -sSL "$OPENCORD_ASAR_URL" --output "$OPENCORD_ASAR_PATH"; then
+        error "Failed to download OpenCord build from GitHub"
     fi
 }
 
@@ -100,14 +119,19 @@ main() {
     debug_log "Starting installation process"
     check_root
     check_for_updates
+    install_opencord_build
 
     local priv_cmd
     priv_cmd=$(find_privilege_cmd)
     debug_log "Using privilege command: $priv_cmd"
 
     echo -e "${YELLOW}Running installer with $priv_cmd...${NC}"
-    debug_log "Executing installer: $priv_cmd $INSTALLER_PATH"
-    if ! "$priv_cmd" "$INSTALLER_PATH"; then
+    debug_log "Executing installer: $priv_cmd env OPENCORD_USER_DATA_DIR=$OPENCORD_DATA_DIR OPENCORD_DIRECTORY=$OPENCORD_ASAR_PATH OPENCORD_DEV_INSTALL=1 $INSTALLER_PATH --install"
+    if ! "$priv_cmd" env \
+        OPENCORD_USER_DATA_DIR="$OPENCORD_DATA_DIR" \
+        OPENCORD_DIRECTORY="$OPENCORD_ASAR_PATH" \
+        OPENCORD_DEV_INSTALL=1 \
+        "$INSTALLER_PATH" --install; then
         debug_log "Installer failed"
         error "Installer failed to run"
     fi
@@ -116,7 +140,7 @@ main() {
     echo -e "\n${GREEN}Installation completed successfully!${NC}"
     echo -e "\nCredits:"
     echo "Original script forked from Vencord"
-    echo "Modified by PhoenixAceVFX for Equicord Updater"
+    echo "Modified by PhoenixAceVFX for OpenCord Updater"
     echo "Rewrite by PhoenixAceVFX"
 }
 

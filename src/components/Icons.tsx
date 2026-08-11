@@ -1116,7 +1116,7 @@ export function HammerAndChiselIcon(props: IconProps) {
     );
 }
 
-export function EquicordIcon(props: IconProps) {
+export function OpenCordIcon(props: IconProps) {
     return (
         <Icon
             {...props}
@@ -1138,6 +1138,9 @@ export function EquicordIcon(props: IconProps) {
         </Icon>
     );
 }
+
+/** @deprecated Use {@link OpenCordIcon}. */
+export const EquicordIcon = OpenCordIcon;
 
 export function UserIcon(props: IconProps) {
     return (

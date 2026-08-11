@@ -13,6 +13,12 @@ import { classNameFactory } from "@utils/css";
 import { Logger } from "@utils/Logger";
 import { Plugin } from "@utils/types";
 import { React, showToast, Toasts } from "@webpack/common";
+import equicordplusIcon from "file://../../../../../assets/branding/equicordplus-icon.png?base64";
+import esharqIcon from "file://../../../../../assets/branding/esharq-icon.png?base64";
+import illegalcordIcon from "file://../../../../../assets/branding/illegalcord-icon.png?base64";
+import mallcordIcon from "file://../../../../../assets/branding/mallcord-icon.png?base64";
+import opencordSymbol from "file://../../../../../assets/branding/opencord-symbol-dark.svg?base64";
+import testcordIcon from "file://../../../../../assets/branding/testcord-icon.png?base64";
 
 import { PluginMeta } from "~plugins";
 
@@ -20,6 +26,13 @@ import { openPluginModal } from "./PluginModal";
 
 const logger = new Logger("PluginCard");
 const cl = classNameFactory("vc-plugins-");
+const OPENCORD_SYMBOL_URL = "data:image/" + "svg+xml;base64," + opencordSymbol;
+const ILLEGALCORD_ICON_URL = "data:image/png;base64," + illegalcordIcon;
+const TESTCORD_ICON_URL = "data:image/png;base64," + testcordIcon;
+const ESHARQ_ICON_URL = "data:image/png;base64," + esharqIcon;
+const EQUICORDPLUS_ICON_URL = "data:image/png;base64," + equicordplusIcon;
+const MALLCORD_ICON_URL = "data:image/png;base64," + mallcordIcon;
+
 interface PluginCardProps extends React.HTMLProps<HTMLDivElement> {
     plugin: Plugin;
     disabled?: boolean;
@@ -32,8 +45,15 @@ interface PluginCardProps extends React.HTMLProps<HTMLDivElement> {
 export function PluginCard({ plugin, disabled, onRestartNeeded, onMouseEnter, onMouseLeave, isNew }: PluginCardProps) {
     const settings = Settings.plugins[plugin.name];
     const pluginMeta = PluginMeta[plugin.name];
-    const isEquicordPlugin = pluginMeta.folderName.startsWith("src/equicordplugins/") ?? false;
-    const isVencordPlugin = pluginMeta.folderName.startsWith("src/plugins/") ?? false;
+    const { folderName } = pluginMeta;
+    const isOpenCordPlugin = folderName.startsWith("src/opencordplugins/") ?? false;
+    const isEquicordPlugin = folderName.startsWith("src/equicordplugins/") ?? false;
+    const isVencordPlugin = folderName.startsWith("src/plugins/") ?? false;
+    const isIllegalcordPlugin = folderName.startsWith("src/illegalcordplugins/") ?? false;
+    const isTestCordPlugin = folderName.startsWith("src/testcordplugins/") ?? false;
+    const isEsharqPlugin = folderName.startsWith("src/esharqplugins/") ?? false;
+    const isEquicordPlusPlugin = folderName.startsWith("src/equicordplusplugins/") ?? false;
+    const isMallCordPlugin = folderName.startsWith("src/mallcordplugins/") ?? false;
     const isUserPlugin = pluginMeta?.userPlugin ?? false;
     const isModifiedPlugin = plugin.isModified ?? false;
 
@@ -97,10 +117,46 @@ export function PluginCard({ plugin, disabled, onRestartNeeded, onMouseEnter, on
             title: "Modified Vencord Plugin"
         },
         {
+            condition: isOpenCordPlugin,
+            src: OPENCORD_SYMBOL_URL,
+            alt: "OpenCord",
+            title: "OpenCord Plugin"
+        },
+        {
             condition: isEquicordPlugin,
             src: "https://equicord.org/assets/favicon.png",
             alt: "Equicord",
             title: "Equicord Plugin"
+        },
+        {
+            condition: isIllegalcordPlugin,
+            src: ILLEGALCORD_ICON_URL,
+            alt: "Illegalcord",
+            title: "Illegalcord Plugin"
+        },
+        {
+            condition: isTestCordPlugin,
+            src: TESTCORD_ICON_URL,
+            alt: "TestCord",
+            title: "TestCord Plugin"
+        },
+        {
+            condition: isEsharqPlugin,
+            src: ESHARQ_ICON_URL,
+            alt: "Esharq",
+            title: "Esharq Plugin"
+        },
+        {
+            condition: isEquicordPlusPlugin,
+            src: EQUICORDPLUS_ICON_URL,
+            alt: "EquicordPlus",
+            title: "EquicordPlus Plugin"
+        },
+        {
+            condition: isMallCordPlugin,
+            src: MALLCORD_ICON_URL,
+            alt: "MallCord",
+            title: "MallCord Plugin"
         },
         {
             condition: isVencordPlugin,
@@ -142,7 +198,7 @@ export function PluginCard({ plugin, disabled, onRestartNeeded, onMouseEnter, on
             onMouseLeave={onMouseLeave}
             infoButton={
                 <button
-                    role="switch"
+                    aria-label="Plugin details"
                     onClick={() => openPluginModal(plugin, onRestartNeeded)}
                     className={cl("info-button")}
                 >

@@ -13,7 +13,18 @@ import unusedImports from "eslint-plugin-unused-imports";
 import tseslint from "typescript-eslint";
 
 export default defineConfig(
-    { ignores: ["dist", "browser", "packages/vencord-types"] },
+    {
+        ignores: [
+            "dist",
+            "browser",
+            "packages/vencord-types",
+            "src/illegalcordplugins/**",
+            "src/testcordplugins/**",
+            "src/esharqplugins/**",
+            "src/equicordplusplugins/**",
+            "src/mallcordplugins/**"
+        ]
+    },
     {
         files: ["src/**/*.{tsx,ts,mts,mjs,js,jsx}", "eslint.config.mjs"],
         settings: {
@@ -66,7 +77,7 @@ export default defineConfig(
             "simple-header/header": [
                 "error",
                 {
-                    "files": [`${import.meta.dirname}/scripts/header-new.txt`, `${import.meta.dirname}/scripts/header-old.txt`],
+                    "files": [`${import.meta.dirname}/scripts/header-new.txt`, `${import.meta.dirname}/scripts/header-old.txt`, `${import.meta.dirname}/scripts/header-opencord.txt`],
                     "templates": { "author": [".*", "Vendicated and contributors"] }
                 }
             ],

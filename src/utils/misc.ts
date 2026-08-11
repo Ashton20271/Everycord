@@ -19,7 +19,7 @@
 import { User } from "@vencord/discord-types";
 import { ChannelStore, GuildMemberStore, IconUtils } from "@webpack/common";
 
-import { EQUICORD_HELPERS, EquicordDevsById, GUILD_ID, KNOWN_ISSUES_CHANNEL_ID, SUPPORT_CHANNEL_ID, VencordDevsById } from "./constants";
+import { EquicordDevsById, EquicordPlusDevsById, EsharqDevsById, GUILD_ID, IllegalcordDevsById, KNOWN_ISSUES_CHANNEL_ID, MallCordDevsById, OPENCORD_HELPERS, OpenCordDevsById, SUPPORT_CHANNEL_ID, TestCordDevsById, VencordDevsById } from "./constants";
 
 /**
  * Calls .join(" ") on the arguments
@@ -78,13 +78,29 @@ export function identity<T>(value: T): T {
     return value;
 }
 
+const SourceDevsById = [VencordDevsById, EquicordDevsById, OpenCordDevsById, IllegalcordDevsById, TestCordDevsById, EsharqDevsById, EquicordPlusDevsById, MallCordDevsById];
+
 export const isPluginDev = (id: string) => Object.hasOwn(VencordDevsById, id);
 export const shouldShowContributorBadge = (id: string) => isPluginDev(id) && VencordDevsById[id].badge !== false;
 
 export const isEquicordPluginDev = (id: string) => Object.hasOwn(EquicordDevsById, id);
 export const shouldShowEquicordContributorBadge = (id: string) => isEquicordPluginDev(id) && EquicordDevsById[id].badge !== false;
 
-export const isAnyPluginDev = (id: string) => Object.hasOwn(VencordDevsById, id) || Object.hasOwn(EquicordDevsById, id);
+export const isMallCordPluginDev = (id: string) => Object.hasOwn(MallCordDevsById, id);
+
+/**
+ * Whether a channel belongs to the MallCord support guild.
+ * MallCord's support guild is not part of OpenCord, so this is always false here.
+ */
+export const isMallCordGuild = (_channelId: string) => false;
+
+/**
+ * Whether a user is MallCord support staff.
+ * MallCord's support roster is not part of OpenCord, so this is always false here.
+ */
+export const isMallCordSupport = (_userId: string) => false;
+
+export const isAnyPluginDev = (id: string) => SourceDevsById.some(devs => Object.hasOwn(devs, id));
 
 export function pluralise(amount: number, singular: string, plural = singular + "s") {
     return amount === 1 ? `${amount} ${singular}` : `${amount} ${plural}`;
@@ -106,13 +122,16 @@ export function tryOrElse<T>(func: () => T, fallback: T): T {
     }
 }
 
-export function isEquicordGuild(id: string | null | undefined, isGuildId: boolean = false): boolean {
+export function isOpenCordGuild(id: string | null | undefined, isGuildId: boolean = false): boolean {
     if (!id) return false;
     if (isGuildId) return id === GUILD_ID;
     const channel = ChannelStore.getChannel(id);
     if (!channel) return false;
     return channel.guild_id === GUILD_ID;
 }
+
+/** @deprecated Use {@link isOpenCordGuild}. */
+export const isEquicordGuild = isOpenCordGuild;
 
 export function isSupportChannel(channelId: string | null | undefined): boolean {
     if (!channelId) return false;
@@ -124,13 +143,16 @@ export function isKnownIssuesCategory(channelId: string | null | undefined): boo
     return channelId === KNOWN_ISSUES_CHANNEL_ID;
 }
 
-export function isEquicordSupport(userId: string | null | undefined): boolean {
+export function isOpenCordSupport(userId: string | null | undefined): boolean {
     if (!userId) return false;
 
     const member = GuildMemberStore.getMember(GUILD_ID, userId);
     if (!member) return false;
-    return member.roles.includes(EQUICORD_HELPERS) || false;
+    return member.roles.includes(OPENCORD_HELPERS) || false;
 }
+
+/** @deprecated Use {@link isOpenCordSupport}. */
+export const isEquicordSupport = isOpenCordSupport;
 
 export function removeFromArray<T>(arr: T[], predicate: (e: T) => boolean) {
     const idx = arr.findIndex(predicate);

@@ -102,8 +102,14 @@ const enum SearchStatus {
     FAVORITES,
     ENABLED,
     DISABLED,
+    OPENCORD,
     EQUICORD,
     VENCORD,
+    ILLEGALCORD,
+    TESTCORD,
+    ESHARQ,
+    EQUICORDPLUS,
+    MALLCORD,
     NEW,
     USER_PLUGINS,
     API_PLUGINS
@@ -115,7 +121,7 @@ export const ExcludedReasons: Record<"web" | "discordDesktop" | "vesktop" | "equ
     vesktop: "Vesktop/Equibop apps",
     equibop: "Vesktop/Equibop apps",
     web: "Vesktop/Equibop apps & Discord web",
-    dev: "Developer version of Equicord"
+    dev: "Developer version of OpenCord"
 };
 
 function ExcludedPluginsList({ search }: { search: string; }) {
@@ -224,11 +230,29 @@ export default function PluginSettings() {
             case SearchStatus.ENABLED:
                 if (!isPluginEnabled(plugin.name)) return false;
                 break;
+            case SearchStatus.OPENCORD:
+                if (!PluginMeta[plugin.name].folderName.startsWith("src/opencordplugins/")) return false;
+                break;
             case SearchStatus.EQUICORD:
                 if (!PluginMeta[plugin.name].folderName.startsWith("src/equicordplugins/")) return false;
                 break;
             case SearchStatus.VENCORD:
                 if (!PluginMeta[plugin.name].folderName.startsWith("src/plugins/")) return false;
+                break;
+            case SearchStatus.ILLEGALCORD:
+                if (!PluginMeta[plugin.name].folderName.startsWith("src/illegalcordplugins/")) return false;
+                break;
+            case SearchStatus.TESTCORD:
+                if (!PluginMeta[plugin.name].folderName.startsWith("src/testcordplugins/")) return false;
+                break;
+            case SearchStatus.ESHARQ:
+                if (!PluginMeta[plugin.name].folderName.startsWith("src/esharqplugins/")) return false;
+                break;
+            case SearchStatus.EQUICORDPLUS:
+                if (!PluginMeta[plugin.name].folderName.startsWith("src/equicordplusplugins/")) return false;
+                break;
+            case SearchStatus.MALLCORD:
+                if (!PluginMeta[plugin.name].folderName.startsWith("src/mallcordplugins/")) return false;
                 break;
             case SearchStatus.NEW:
                 if (!newPluginsSet?.has(plugin.name)) return false;
@@ -287,7 +311,7 @@ export default function PluginSettings() {
 
             if (isRequired) {
                 const tooltipText = p.required || !depMap[p.name]
-                    ? "This plugin is required for Equicord to function."
+                    ? "This plugin is required for OpenCord to function."
                     : <PluginDependencyList deps={depMap[p.name]?.filter(d => settings.plugins[d].enabled)} />;
 
                 requiredPlugins.push(
@@ -429,8 +453,14 @@ export default function PluginSettings() {
                             { label: "Show Favorites", value: SearchStatus.FAVORITES },
                             { label: "Show Enabled", value: SearchStatus.ENABLED },
                             { label: "Show Disabled", value: SearchStatus.DISABLED },
+                            { label: "Show OpenCord", value: SearchStatus.OPENCORD },
                             { label: "Show Equicord", value: SearchStatus.EQUICORD },
                             { label: "Show Vencord", value: SearchStatus.VENCORD },
+                            { label: "Show Illegalcord", value: SearchStatus.ILLEGALCORD },
+                            { label: "Show TestCord", value: SearchStatus.TESTCORD },
+                            { label: "Show Esharq", value: SearchStatus.ESHARQ },
+                            { label: "Show EquicordPlus", value: SearchStatus.EQUICORDPLUS },
+                            { label: "Show MallCord", value: SearchStatus.MALLCORD },
                             { label: "Show New", value: SearchStatus.NEW },
                             hasUserPlugins && { label: "Show UserPlugins", value: SearchStatus.USER_PLUGINS },
                             { label: "Show API Plugins", value: SearchStatus.API_PLUGINS },
