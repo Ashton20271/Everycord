@@ -7,11 +7,11 @@
 import "./styles.css";
 
 import { HeaderBarButton } from "@api/HeaderBar";
+import { sleep } from "@utils/misc";
 import { ModalCloseButton,ModalContent, ModalFooter, ModalHeader, ModalRoot, openModal } from "@utils/modal";
 import definePlugin from "@utils/types";
 import { findByPropsLazy, findStoreLazy } from "@webpack";
-import { Forms } from "@webpack/common";
-import { React, useEffect, useMemo,useState } from "@webpack/common";
+import { Forms, React, useEffect, useMemo,useState } from "@webpack/common";
 
 import { t, useTranslation } from "../autoTranslateNightcord";
 
@@ -129,7 +129,7 @@ function BulkFriendRemoveModal({ rootProps }: { rootProps: any; }) {
                 setFriends(p => p.map(x => x.id === f.id ? { ...x, removing: false, selected: false } : x));
             }
             setProgress({ done: i + 1, total: selected.length });
-            await new Promise(r => setTimeout(r, 800));
+            await sleep(800);
         }
         setRemoving(false);
     }

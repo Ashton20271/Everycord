@@ -16,9 +16,9 @@ import "./styles.css";
 import { EquicordDevs } from "@utils/constants";
 import { t } from "@utils/esharqI18n";
 import definePlugin from "@utils/types";
-import { i18n } from "@webpack/common";
+import { i18n, React } from "@webpack/common";
 
-import { collectMissing as rawCollect } from "./collector";
+import { collectMissing as rawCollect, sessionStats } from "./collector";
 import { startDomFallback, stopDomFallback } from "./domFallback";
 import { settings } from "./settings";
 import { translations as AR } from "./translations";
@@ -50,8 +50,11 @@ let active = false;
 
 // تطبيع: ديسكورد يستخدم فواصل/علامات اقتباس منحنية (’ ‘ “ ”) — نوحّدها بالمستقيمة
 // فتُطابِق مفاتيح القاموس بصرف النظر عن شكل الفاصلة (يحلّ فئة كاملة من عدم المطابقة).
+// نقصّ المسافات أيضاً: المُجمِّع كان يقصّها والبحث لا يقصّها، فأي نصّ يرسله ديسكورد
+// بمسافة أو سطر زائد يفشل بحثه في القاموس ثم يُجمَع مقصوصاً — فيظهر في قائمة الناقص
+// وهو مترجَم أصلاً. مفاتيح القاموس بلا مسافات زائدة، فالقصّ لا يغيّرها.
 function normalize(s: string): string {
-    return s.replace(/[‘’‛]/g, "'").replace(/[“”]/g, '"');
+    return s.replace(/[‘’‛]/g, "'").replace(/[“”]/g, '"').trim();
 }
 
 // خريطة مُطبَّعة (مفتاح مُطبَّع → عربي) تُبنى مرّة واحدة من القاموس.
@@ -65,9 +68,22 @@ function lookup(text: string): string | undefined {
 // عدد الترجمات في القاموس (للإحصائيات في الإعدادات).
 export const translationCount = NORM.size;
 
+// عزل ثنائي الاتجاه (bidi): نغلّف كل نصّ عربي مُترجَم بعازل RTL (RLI U+2067 … PDI U+2069)
+// فيُعرَض من اليمين لليسار بصرف النظر عن اتجاه حاوية ديسكورد (كثير منها LTR فتتشوّه العربية)،
+// مع بقاء أي مقطع لاتيني/رقمي بداخله (اسم/اختصار) LTR في مكانه الصحيح عبر خوارزمية bidi.
+// حرفان غير مرئيّين فقط — يحلّان تشوّه ترتيب العربية المختلطة بلا أي أثر آخر.
+const HAS_ARABIC = /[؀-ۿ]/;
+const RLI = String.fromCharCode(0x2067); // RIGHT-TO-LEFT ISOLATE
+const PDI = String.fromCharCode(0x2069); // POP DIRECTIONAL ISOLATE
+function rtl(s: string): string {
+    return HAS_ARABIC.test(s) ? RLI + s + PDI : s;
+}
+
 // وضع تشخيصي: يُعلّم المُترجَم بـ🟢 وغير المُترجَم بـ🔴 (للمطوّر فقط — يُطفأ عند الإطلاق).
 function diag(ok: boolean, text: string): string {
-    return settings.store.diagnosticMode ? (ok ? "🟢" : "🔴") + text : text;
+    if (ok) sessionStats.hits++; else sessionStats.misses++;
+    const out = ok ? rtl(text) : text; // نعزل المُترجَم فقط (غير المُترجَم إنجليزي يبقى كما هو)
+    return settings.store.diagnosticMode ? (ok ? "🟢" : "🔴") + out : out;
 }
 
 // جمع النصوص غير المترجَمة للحصاد — لا يعمل تلقائياً (طلب المالك: لا تخزين خلفي صامت).
@@ -84,6 +100,12 @@ export function formatMessage(template: string, values?: Record<string, any>): s
 }
 
 // أسماء أيام الأسبوع (للطوابع الزمنية «Monday at 9:00am»).
+// الصيغة المفردة للوقت النسبيّ ("an hour ago" → «منذ ساعة»).
+const AGO_ONE: Record<string, string> = {
+    second: "منذ ثانية", minute: "منذ دقيقة", hour: "منذ ساعة", day: "منذ يوم",
+    week: "منذ أسبوع", month: "منذ شهر", year: "منذ سنة"
+};
+
 const WEEKDAYS_AR: Record<string, string> = {
     Sunday: "الأحد", Monday: "الاثنين", Tuesday: "الثلاثاء", Wednesday: "الأربعاء",
     Thursday: "الخميس", Friday: "الجمعة", Saturday: "السبت"
@@ -93,11 +115,57 @@ const WEEKDAYS_AR: Record<string, string> = {
 // ("12 Mutual Friends") — فلا يستعيده recoverTemplate ولا يُطابِق القاموس. نطابقه بنمط
 // مضبوط ونُعيد صياغته بالعربية. قائمة قصيرة جداً ومُقيّدة بـ ^…$ لتفادي أي مطابقة خاطئة.
 // نُبقي الاسم العَلَم (قناة/رتبة/مستخدم) بالإنجليزية ونُعرّب التسمية المحيطة فقط.
+// صيغة العدد في العربية تختلف عن الإنجليزية: ١ مفرد بلا رقم، ٢ مثنى بلا رقم،
+// ٣–١٠ جمع مع الرقم، ١١ فأكثر مفرد مع الرقم. من دونها يخرج "3 إشارة جديدة" وهو خطأ.
+function arCount(n: number, one: string, two: string, few: string, many: string): string {
+    if (n === 1) return one;
+    if (n === 2) return two;
+    const rest = n % 100;
+    return rest >= 3 && rest <= 10 ? `${n} ${few}` : `${n} ${many}`;
+}
+
+// دورات الفوترة كما تصل مفردةً داخل جُمل الاشتراك ("every year" / "every month").
+// في الصيغة المختلطة تصل نائبةً ({1}) لا كلمةً، فنُعيدها كما هي ليملأها rebuildFromTemplate.
+const PERIOD_AR: Record<string, string> = {
+    year: "سنة", month: "شهر", week: "أسبوع", day: "يوم"
+};
+
 const NUMERIC_PATTERNS: { re: RegExp; ar: (m: RegExpMatchArray) => string }[] = [
-    { re: /^(\d+) Mutual Friends$/, ar: m => `${m[1]} صديق مشترك` },
-    { re: /^(\d+) Mutual Servers$/, ar: m => `${m[1]} خادم مشترك` },
+    // ── شارة الإشارات غير المقروءة ──
+    // ديسكورد يرسلها بحروف عادية ("3 New Mentions") ويرفعها CSS إلى حروف كبيرة، فلا
+    // تُطابق مفتاح "New Mentions" في القاموس لأن العدد مدموج فيها.
+    {
+        re: /^(\d+) New Mentions?$/,
+        ar: m => arCount(+m[1], "إشارة جديدة", "إشارتان جديدتان", "إشارات جديدة", "إشارة جديدة")
+    },
+    // شارة العدّ غير المقروء بجانب قنوات المنتدى في الشريط الجانبي ("256 New").
+    { re: /^(\d+) New$/, ar: m => `${m[1]} جديد` },
+    // فاصل «الرسائل الجديدة» فوق أول رسالة غير مقروءة.
+    {
+        re: /^(\d+) new messages? since (.+)$/s,
+        ar: m => `${arCount(+m[1], "رسالة جديدة", "رسالتان جديدتان", "رسائل جديدة", "رسالة جديدة")} منذ ${m[2]}`
+    },
+    // الوضع البطيء مع المدّة المدموجة.
+    {
+        re: /^Slowmode is enabled\. Members can send one message every (.+)\.$/,
+        ar: m => `الوضع البطيء مفعّل. يمكن للأعضاء إرسال رسالة واحدة كل ${m[1]}.`
+    },
+    { re: /^Tomorrow at (.+)$/, ar: m => `غداً في ${m[1]}` },
+    { re: /^(\d+) Mutual Friends?$/, ar: m => `${m[1]} صديق مشترك` },
+    { re: /^(\d+) Mutual Servers?$/, ar: m => `${m[1]} خادم مشترك` },
+    // الملف الشخصي الخاص (يبقى اسم المستخدم، مع دعم الفاصلة المنحنية والمستقيمة).
+    { re: /^(.+?)['’]s profile is private, so some info is hidden\. Add them as a friend to see more\.$/, ar: m => `الملف الشخصي لـ${m[1]} خاصّ، لذا بعض المعلومات مخفيّة. أضِفه صديقاً لرؤية المزيد.` },
     { re: /^(\d+) Boosts?$/, ar: m => `${m[1]} تعزيز` },
     { re: /^(\d+)\+ Boosts?$/, ar: m => `${m[1]}+ تعزيز` },
+    // نافذة «أوشكت على الوصول» للتعزيز — العدد متغيّر واسم المكافأة (يبقى كما هو).
+    {
+        re: /^Just (\d+) more Boosts? to help unlock (.+?) for everyone\.$/,
+        ar: m => `${arCount(+m[1], "تعزيز واحد إضافي", "تعزيزان إضافيّان", "تعزيزات إضافية", "تعزيزاً إضافيّاً")} فقط لمساعدة الجميع على فتح ${m[2]}.`
+    },
+    // عدّاد الفعاليّات ("1 Event" / "2 Events")
+    { re: /^(\d+) Events?$/, ar: m => arCount(+m[1], "فعالية واحدة", "فعاليتان", "فعاليات", "فعالية") },
+    // مدّة الاشتراك بالأشهر ("2 Months")
+    { re: /^(\d+) Months?$/, ar: m => arCount(+m[1], "شهر واحد", "شهران", "أشهر", "شهراً") },
     { re: /^(\d+) of (\d+) users$/, ar: m => `${m[1]} من ${m[2]} مستخدم` },
     // مدد زمنية مخبوزة (وقت تشغيل البثّ، مدّة المكالمة…) — صيغة مبسّطة مقبولة
     { re: /^(\d+) hours?$/, ar: m => `${m[1]} ساعة` },
@@ -111,12 +179,44 @@ const NUMERIC_PATTERNS: { re: RegExp; ar: (m: RegExpMatchArray) => string }[] = 
     { re: /^(\d+)d ago$/, ar: m => `قبل ${m[1]} يوم` },
     { re: /^(\d+)w ago$/, ar: m => `قبل ${m[1]} أسبوع` },
     { re: /^(\d+)y ago$/, ar: m => `قبل ${m[1]} سنة` },
+    // وقت نسبيّ بالصيغة الطويلة ("6 hours ago") — يملأ به ديسكورد {timeAgo} في
+    // "Active {timeAgo}"، فلولا هذه الأنماط يبقى «نشط 6 hours ago» مختلطاً.
+    { re: /^(\d+) seconds? ago$/, ar: m => `منذ ${arCount(+m[1], "ثانية", "ثانيتين", "ثوانٍ", "ثانية")}` },
+    { re: /^(\d+) minutes? ago$/, ar: m => `منذ ${arCount(+m[1], "دقيقة", "دقيقتين", "دقائق", "دقيقة")}` },
+    { re: /^(\d+) hours? ago$/, ar: m => `منذ ${arCount(+m[1], "ساعة", "ساعتين", "ساعات", "ساعة")}` },
+    { re: /^(\d+) days? ago$/, ar: m => `منذ ${arCount(+m[1], "يوم", "يومين", "أيام", "يوماً")}` },
+    { re: /^(\d+) weeks? ago$/, ar: m => `منذ ${arCount(+m[1], "أسبوع", "أسبوعين", "أسابيع", "أسبوعاً")}` },
+    { re: /^(\d+) months? ago$/, ar: m => `منذ ${arCount(+m[1], "شهر", "شهرين", "أشهر", "شهراً")}` },
+    { re: /^(\d+) years? ago$/, ar: m => `منذ ${arCount(+m[1], "سنة", "سنتين", "سنوات", "سنة")}` },
+    // الصيغة المفردة التي يخرجها moment.js ("an hour ago" / "a day ago").
+    { re: /^an? (second|minute|hour|day|week|month|year) ago$/, ar: m => AGO_ONE[m[1]] },
+    { re: /^a few seconds ago$/, ar: () => "منذ لحظات" },
+    { re: /^just now$/i, ar: () => "الآن" },
     // عدّاد أسئلة الإعداد ("Questions (1/5)")
     { re: /^Questions \((\d+)\/(\d+)\)$/, ar: m => `أسئلة (${m[1]}/${m[2]})` },
     // تقدّم المهمة ("Quest progress: 0%".."99%"؛ الـ100% مفتاح في القاموس)
     { re: /^Quest progress: (\d+)%$/, ar: m => `تقدّم المهمة: ${m[1]}%` },
     // رصيد سيُطبَّق في تاريخ مخبوز ("Credit will be applied on Jun 22, 2026.") — نُبقي التاريخ كصيغة ديسكورد
     { re: /^Credit will be applied on (.+)\.$/, ar: m => `سيُطبَّق الرصيد في ${m[1]}.` },
+    // جزء من جملة الاشتراك المتأخّر ("...and will end on August 21, 2026") — يصل نائبةً مستقلّة.
+    { re: /^end on (.+)$/, ar: m => `ينتهي في ${m[1]}` },
+    { re: /^for (\d+) months?\. Keep it with Nitro!$/, ar: m => `لمدّة ${arCount(+m[1], "شهر واحد", "شهرين", "أشهر", "شهراً")}. احتفظ به مع Nitro!` },
+    // ── عدّادات مخبوزة بفواصل الآلاف (قائمة الخوادم/الاكتشاف) ──
+    // هذه بالمئات في الحصاد؛ نمط واحد يغنيها كلّها بدل إضافة كل رقم للقاموس يدوياً.
+    { re: /^([\d,]+) Members?$/, ar: m => `${m[1]} عضو` },
+    { re: /^([\d,]+) Online$/, ar: m => `${m[1]} متصل` },
+    { re: /^([\d,]+) (?:Person|People)$/, ar: m => `${m[1]} شخص` },
+    { re: /^([\d,]+) servers?$/, ar: m => `${m[1]} خادم` },
+    // النسخة الصغيرة من "Months" (النمط الأعلى يطابق الكبيرة فقط)
+    { re: /^(\d+) months?$/, ar: m => arCount(+m[1], "شهر واحد", "شهران", "أشهر", "شهراً") },
+    // «و4 آخرين» في قوائم الأسماء المختصرة
+    { re: /^, and (\d+) others?$/, ar: m => `، و${m[1]} آخرين` },
+    { re: /^\{0\}, \{1\}, and (\d+) others?$/, ar: m => `{0}، {1}، و${m[1]} آخرين` },
+    // «يقول:» في معاينة الرسالة (يبقى اسم المستخدم كما هو)
+    { re: /^(.+) says:$/, ar: m => `${m[1]} يقول:` },
+    // عدّاد الأيام حتى الإسقاط التالي
+    { re: /^(\d+) days? until your next$/, ar: m => `${arCount(+m[1], "يوم واحد", "يومان", "أيام", "يوماً")} حتى` },
+    { re: /^(\d+) days? until your next \{0\} drop$/, ar: m => `${arCount(+m[1], "يوم واحد", "يومان", "أيام", "يوماً")} حتى إسقاط {0} التالي` },
     // ── الإعداد التمهيدي / دليل الخادم / الأذونات ──
     { re: /^Question (\d+)$/, ar: m => `السؤال ${m[1]}` },
     { re: /^Available Answers — (\d+) of (\d+)$/, ar: m => `الإجابات المتاحة — ${m[1]} من ${m[2]}` },
@@ -131,7 +231,10 @@ const NUMERIC_PATTERNS: { re: RegExp; ar: (m: RegExpMatchArray) => string }[] = 
     { re: /^(.+), (\d+) members?$/, ar: m => `${m[1]}، ${m[2]} عضو` },
     // ── الملفات الشخصية / المتفرّجون (يبقى الاسم كما هو) ──
     { re: /^(.+?)['’]s profile$/, ar: m => `الملف الشخصي لـ${m[1]}` },
-    { re: /^Spectators - (\d+)$/, ar: m => `المتفرّجون - ${m[1]}` },
+    // «المشاهدون» لا «المتفرّجون»: القاموس يستعمل الأولى في مفاتيح Spectators الثلاثة،
+    // والنمط كان يستعمل الثانية — فما إن يعمل النمط حتى يظهر "المشاهدون - 1" بجوار
+    // "المتفرّجون - 2" في الشاشة نفسها.
+    { re: /^Spectators - (\d+)$/, ar: m => `المشاهدون - ${m[1]}` },
     { re: /^Created on (.+) by (.+)$/, ar: m => `أُنشئ في ${m[1]} بواسطة ${m[2]}` },
     // ── مدد / أوقات نسبية مخبوزة ──
     { re: /^For (\d+) Hours?$/, ar: m => `لمدّة ${m[1]} ساعة` },
@@ -140,7 +243,116 @@ const NUMERIC_PATTERNS: { re: RegExp; ar: (m: RegExpMatchArray) => string }[] = 
     // ── طوابع زمنية مطلقة ("Today at 9:00am" / "Monday at 9:00am") ──
     { re: /^Today at (.+)$/, ar: m => `اليوم في ${m[1]}` },
     { re: /^Yesterday at (.+)$/, ar: m => `أمس في ${m[1]}` },
-    { re: /^(Sunday|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday) at (.+)$/, ar: m => `${WEEKDAYS_AR[m[1]]} في ${m[2]}` }
+    { re: /^(Sunday|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday) at (.+)$/, ar: m => `${WEEKDAYS_AR[m[1]]} في ${m[2]}` },
+    // ── طبقة الألعاب (يبقى اسم اللعبة كما هو) ──
+    { re: /^Enable Overlay for (.+)$/, ar: m => `تفعيل الطبقة للعبة ${m[1]}` },
+    { re: /^Enable Legacy overlay for (.+)$/, ar: m => `تفعيل الطبقة القديمة للعبة ${m[1]}` },
+    // ── نشاط الصوت في قائمة الأعضاء (يبقى اسم المستخدم كما هو) ──
+    { re: /^(.+) joined voice$/, ar: m => `انضم ${m[1]} إلى الصوت` },
+    // ── الدولة/المنطقة (يبقى اسم الدولة بصيغة ديسكورد) ──
+    { re: /^Country\/Region: (.+)$/, ar: m => `الدولة/المنطقة: ${m[1]}` },
+    // ── الإعداد التمهيدي: قنوات ناقصة + عدّادا القنوات ──
+    { re: /^(\d+) public channels? are missing from Questions and Default Channels\.$/, ar: m => `${m[1]} قناة عامة غير مضافة إلى الأسئلة أو القنوات الافتراضية.` },
+    { re: /^(\d+) CHATTABLE$/, ar: m => `${m[1]} قابلة للدردشة` },
+    { re: /^(\d+) TOTAL$/, ar: m => `${m[1]} الإجمالي` },
+    // ── المهام والمتجر: استلام الزينة، تواريخ الانتهاء، الأسعار (تبقى العملة/التاريخ بصيغة ديسكورد) ──
+    { re: /^\{0\} claimed on (\d+\/\d+)$/, ar: m => `{0} استُلمت في ${m[1]}` },
+    { re: /^claimed on (\d+\/\d+)$/, ar: m => `استُلمت في ${m[1]}` },
+    { re: /^Ends (\d+\/\d+)$/, ar: m => `تنتهي في ${m[1]}` },
+    { re: /^Price: (.+) after (\d+)% discount$/, ar: m => `السعر: ${m[1]} بعد خصم ${m[2]}%` },
+    { re: /^Price: (.+)$/, ar: m => `السعر: ${m[1]}` },
+    { re: /^(.+) has been added to your collection\.$/, ar: m => `أُضيفت ${m[1]} إلى مجموعتك.` },
+    // ── تعليمات المهام (يبقى اسم اللعبة/العملة كما هو) ──
+    { re: /^for (\d+) minutes and win (\d+) Orbs\.$/, ar: m => `لمدة ${m[1]} دقيقة واربح ${m[2]} Orbs.` },
+    { re: /^for (\d+) minutes with your Discord client open and win (\d+) Orbs\.$/, ar: m => `لمدة ${m[1]} دقيقة مع فتح عميل ديسكورد واربح ${m[2]} Orbs.` },
+    { re: /^Use (.+) for (\d+) minutes with your Discord client open and win (\d+) Orbs\.$/, ar: m => `استخدم ${m[1]} لمدة ${m[2]} دقيقة مع فتح عميل ديسكورد واربح ${m[3]} Orbs.` },
+    { re: /^Watch the video to win (\d+) Orbs!$/, ar: m => `شاهد الفيديو واربح ${m[1]} Orbs!` },
+    // ── سجلّ المكالمات (يبقى اسم المتصل كما هو) ──
+    { re: /^\{0\} started a call that lasted (\d+) minutes?\.$/, ar: m => `بدأ {0} مكالمة استمرت ${m[1]} دقيقة.` },
+    { re: /^started a call that lasted (\d+) minutes?\.$/, ar: m => `بدأ مكالمة استمرت ${m[1]} دقيقة.` },
+    // ── عودة صديق بعد غياب ──
+    { re: /^Returning after (\d+) months?$/, ar: m => `عائد بعد ${m[1]} شهر` },
+    // ── بدايات القنوات: النسخ المبتورة/ذات {0} التي لا يغطيها نمط "channel." الكامل ──
+    { re: /^This is the start of the #(.+) channel\. \{0\}$/, ar: m => `هذه بداية قناة #${m[1]}. {0}` },
+    { re: /^This is the start of the #(.+)$/, ar: m => `هذه بداية قناة #${m[1]}` },
+    // ── تسمية منطقة الدردشة لقارئ الشاشة ("X chat" — يبقى اسم القناة كما هو) ──
+    { re: /^(.+) chat$/, ar: m => `دردشة ${m[1]}` },
+    // ── إعداد الأمان: "N of M enabled" + متجر الخادم + مزايا التعزيز (يبقى اسم اللعبة/الحجم) ──
+    { re: /^(\d+) of (\d+) enabled$/, ar: m => `مفعّل ${m[1]} من ${m[2]}` },
+    { re: /^Explore the latest drops from (.+)!$/, ar: m => `استكشف أحدث الإصدارات من ${m[1]}!` },
+    { re: /^Let everyone share bigger files in this server, up to (\d+)MB\.$/, ar: m => `دَع الجميع يشاركون ملفات أكبر في هذا الخادم، حتى ${m[1]}MB.` },
+    // ── مشاركة النشاط / رؤية الملف الشخصي (العدد متغيّر) ──
+    { re: /^You may be sharing activity from (\d+) games you play, including$/, ar: m => `قد تشارك نشاط ${m[1]} لعبة تلعبها، منها` },
+    { re: /^Your full profile is visible to friends and any server you join with (\d+) or fewer members\. Everyone else sees a limited version\.$/, ar: m => `ملفك الشخصي الكامل ظاهر لأصدقائك ولأي خادم تنضمّ إليه بـ${m[1]} عضواً أو أقل. أما البقية فيرون نسخة محدودة.` },
+    { re: /^Your activity is shared with friends and any server you join with (\d+) or fewer members\.$/, ar: m => `يُشارَك نشاطك مع أصدقائك ومع أي خادم تنضمّ إليه بـ${m[1]} عضواً أو أقل.` },
+    { re: /^Show (\d+) more items?$/, ar: m => `عرض ${m[1]} عنصراً إضافياً` },
+    // بطاقة نشاط البثّ: العدد مخبوز في النصّ فيلزمه نمط لا مدخل قاموس.
+    { re: /^In a party of (\d+)$/, ar: m => `في مجموعة من ${m[1]}` },
+    // ── عدّادات وأسماء مخبوزة (طلبات الصداقة · الطرد · تفويض التطبيقات) ──
+    { re: /^\+ (\d+) more$/, ar: m => `+${m[1]} أخرى` },
+    { re: /^(\d+) others$/, ar: m => `${m[1]} آخرين` },
+    { re: /^Pending, (\d+) new$/, ar: m => `قيد الانتظار، ${m[1]} جديد` },
+    { re: /^Used in ([\d,]+) servers$/, ar: m => `مُستخدَم في ${m[1]} خادم` },
+    { re: /^Active since (.+)$/, ar: m => `نشِط منذ ${m[1]}` },
+    { re: /^This will allow the developer of (.+) to:$/, ar: m => `سيتيح هذا لمطوّر ${m[1]} أن:` },
+    { re: /^Are you sure you want to kick @(.+) from the server\? They will be able to rejoin again with a new invite\.$/, ar: m => `هل تريد فعلاً طرد @${m[1]} من الخادم؟ سيتمكّن من الانضمام مجدّداً بدعوة جديدة.` },
+    // ── متجر Nitro والمنشورات: العدد أو الوقت مخبوز في النصّ ──
+    { re: /^(\d+) Orbs$/, ar: m => `${m[1]} Orbs` },
+    { re: /^(\d+) Orbs earned$/, ar: m => `رُبِحت ${m[1]} Orbs` },
+    { re: /^Watch the video to win (\d+) Orbs!$/, ar: m => `شاهِد الفيديو لتربح ${m[1]} Orbs!` },
+    { re: /^for (\d+) minutes and win (\d+) Orbs\.$/, ar: m => `لمدّة ${m[1]} دقيقة وتربح ${m[2]} Orbs.` },
+    { re: /^for (\d+) minutes with your Discord client open and win (\d+) Orbs\.$/, ar: m => `لمدّة ${m[1]} دقيقة مع إبقاء ديسكورد مفتوحاً وتربح ${m[2]} Orbs.` },
+    { re: /^(\d+) Active Posts?$/, ar: m => arCount(+m[1], "منشور نشِط واحد", "منشوران نشِطان", "منشورات نشِطة", "منشوراً نشِطاً") },
+    { re: /^(\d+)\+ new messages since (.+)$/, ar: m => `أكثر من ${m[1]} رسالة جديدة منذ ${m[2]}` },
+    // أصوات التصويت + تذكيرات متأخّرة + خصم مستقل
+    { re: /^(\d+) votes?$/, ar: m => arCount(+m[1], "صوت واحد", "صوتان", "أصوات", "صوتاً") },
+    { re: /^(\d+) overdue reminders?$/, ar: m => arCount(+m[1], "تذكير متأخّر واحد", "تذكيران متأخّران", "تذكيرات متأخّرة", "تذكيراً متأخّراً") },
+    { re: /^(\d+)% discount$/, ar: m => `خصم ${m[1]}%` },
+    { re: /^(.+), NaN members$/, ar: m => `${m[1]}، الأعضاء` },
+    { re: /^You have NaN days left to get (.+) off Nitro Yearly$/, ar: m => `بقيت لك أيام للحصول على خصم ${m[1]} على Nitro السنوي` },
+    // ── عدّادات صفحات الخصوصية والارتباطات (العدد مخبوز في النصّ) ──
+    { re: /^(\d+) Permissions? enabled$/, ar: m => arCount(+m[1], "إذن واحد مفعّل", "إذنان مفعّلان", "أذونات مفعّلة", "إذناً مفعّلاً") },
+    { re: /^(\d+) accounts?$/, ar: m => arCount(+m[1], "حساب واحد", "حسابان", "حسابات", "حساباً") },
+    { re: /^(\d+) connections?$/, ar: m => arCount(+m[1], "ارتباط واحد", "ارتباطان", "ارتباطات", "ارتباطاً") },
+    { re: /^You may also be sharing activity from (\d+) games you play, including$/, ar: m => `قد تشارك أيضاً نشاط ${m[1]} لعبة تلعبها، منها` },
+    // ── إقرار الاشتراك المتجدّد (السعر والتاريخ والدورة مخبوزة → لا يصلح مفتاح قاموس) ──
+    // يصل بصيغتين: نصّاً كاملاً، أو قالباً مختلطاً فيه نائبتان ({0} زرّ التأكيد، {1} الدورة)؛
+    // نمط واحد يغطّيهما لأنّ PERIOD_AR يُعيد النائبة كما هي حين لا تكون كلمة دورة.
+    {
+        re: /^By clicking ['‘’](.+?)['‘’], you are signing up for a recurring subscription\. You['‘’]ll be charged (.+?) today, then (.+?) plus applicable taxes every (\S+) starting (.+?) until you cancel\. Prices subject to change\. Cancel anytime in your Settings\.$/,
+        ar: m => `بالنقر على «${lookup(m[1]) ?? m[1]}»، أنت تشترك في اشتراك متجدّد تلقائياً. سيُخصم منك ${m[2]} اليوم، ثم ${m[3]} زائد الضرائب المطبَّقة كل ${PERIOD_AR[m[4]] ?? m[4]} ابتداءً من ${m[5]} حتى تُلغي. الأسعار عرضة للتغيير. يمكنك الإلغاء في أي وقت من الإعدادات.`
+    },
+    // شارة التوفير على الخطّة السنوية ("2 months free!")
+    { re: /^(\d+) months? free!$/, ar: m => `${arCount(+m[1], "شهر واحد", "شهران", "أشهر", "شهراً")} مجاناً!` },
+    // سطر التسويات في فاتورة الشراء (المبلغ مخبوز)
+    { re: /^Total adjustments (.+)$/, ar: m => `إجمالي التسويات ${m[1]}` },
+    // تاريخ تأسيس الخادم في بطاقته ("Est. Oct 2024") — يبقى التاريخ بصيغة ديسكورد
+    { re: /^Est\. (.+)$/, ar: m => `تأسّس ${m[1]}` },
+    // مدد قصيرة في قوائم الإشراف الآلي/الوضع البطيء
+    { re: /^\((\d+) secs?\)$/, ar: m => `(${m[1]} ثانية)` },
+    { re: /^(\d+) secs?$/, ar: m => `${m[1]} ثانية` },
+    { re: /^(\d+)-day$/, ar: m => `${m[1]} يوماً` },
+    // اسم قاعدة الإشراف الآلي في قائمة السياق ("Filter (1 Word)")
+    { re: /^Filter \((\d+) Words?\)$/, ar: m => `تصفية (${m[1]} كلمة)` },
+
+    // ── دفعة ٥١: عدّادات نتائج البحث والوسائط ──
+    // «38,179 Results» — الفاصلة جزء من الرقم فتُلتقط معه
+    { re: /^([\d,]+) Results?$/, ar: m => `${m[1]} نتيجة` },
+    { re: /^(\d+) Messages? ›$/, ar: m => `${m[1]} رسالة ›` },
+    { re: /^(\d+) lines?$/, ar: m => `${m[1]} سطر` },
+    { re: /^(\d+) images?$/, ar: m => `${m[1]} صورة` },
+    { re: /^Uploading (\d+) Files?$/, ar: m => `جارٍ رفع ${m[1]} ملف` },
+    { re: /^Filters \((\d+)\)$/, ar: m => `المرشّحات (${m[1]})` },
+    // عدّاد تنازلي مضغوط في المهامّ («14D 18H»)
+    { re: /^(\d+)D (\d+)H$/, ar: m => `${m[1]} يوم و${m[2]} ساعة` },
+    { re: /^Want to make it easier to follow this chain of (\d+) replies\?$/, ar: m => `أتريد تسهيل متابعة سلسلة الردود هذه البالغة ${m[1]} ردود؟` },
+
+    // ⚠️ يمرّر ديسكورد أحياناً NaN بدل العدد (خلل عنده) — نقبله كما هو بدل أن يبقى السطر إنجليزيّاً
+    { re: /^(.+?), (.+?), and (\d+|NaN) others are currently in voice$/, ar: m => `${m[1]} و${m[2]} و${m[3]} آخرون في الصوت حالياً` },
+    { re: /^(.+?), (.+?), (.+?), and (\d+|NaN) others$/, ar: m => `${m[1]} و${m[2]} و${m[3]} و${m[4]} آخرون` },
+    { re: /^Added (.+?)\. (\d+|NaN) recipients selected\.$/, ar: m => `أُضيف ${m[1]}. ${m[2]} مستلماً محدَّداً.` },
+    { re: /^(\d+|NaN) mentions, (.+?) \(announcement channel\)$/, ar: m => `${m[1]} إشارة، ${m[2]} (قناة إعلانات)` },
+    { re: /^You have (\d+|NaN) hours? left to get (.+?) off Nitro Yearly$/, ar: m => `أمامك ${m[1]} ساعة للحصول على خصم ${m[2]} على نيترو السنوي` }
 ];
 
 function numericTemplate(text: string): string | null {
@@ -193,6 +405,42 @@ function recoverTemplate(orig: StrFn, msg: any, realValues: any): string | null 
 }
 
 // يُعيد بناء مصفوفة الأجزاء من ترجمة فيها نوائب {0}، مع إدراج العناصر الأصلية في مكانها.
+// ── ترجمة النصّ داخل النوائب (عناصر React) ───────────────────────────────────
+// rebuildFromTemplate كان يُدرج النوائب كما هي. فإن كانت النائبة عنصر React يحوي
+// نصّاً إنجليزيّاً (‎<strong>past due</strong>‎ أو رابط "Learn more") بقي إنجليزيّاً
+// وسط جملة عربية — وهذا ما ظهر في صفحة الاشتراكات:
+//   «اشتراكك past due وسوف end on August 21, 2026. Learn more.»
+// القالب نفسه كان مُترجَماً، والمفتاح "Learn more" موجوداً في القاموس؛ العطب أن
+// محتوى النائبة لم يُمَسّ أصلاً. نترجم هنا أبناء العنصر النصّيين باستنساخه
+// (عناصر React غير قابلة للتعديل في مكانها) مع حدّ عمق يمنع أي تكرار غير منتهٍ.
+function translateNode(node: any, depth = 0): any {
+    if (depth > 4 || node == null) return node;
+
+    if (typeof node === "string") {
+        const core = node.trim();
+        if (core.length < 2) return node;
+        const ar = lookup(core) ?? numericTemplate(core);
+        if (ar == null) { collect(core); return node; }
+        return node.replace(core, ar); // نحافظ على المسافات المحيطة
+    }
+
+    if (Array.isArray(node)) {
+        let changed = false;
+        const out = node.map(n => {
+            const r = translateNode(n, depth + 1);
+            if (r !== n) changed = true;
+            return r;
+        });
+        return changed ? out : node;
+    }
+
+    const kids = node?.props?.children;
+    if (kids == null) return node;
+    const newKids = translateNode(kids, depth + 1);
+    if (newKids === kids) return node;
+    try { return React.cloneElement(node, undefined, newKids); } catch { return node; }
+}
+
 function rebuildFromTemplate(translated: string, placeholders: any[]): any[] {
     const result: any[] = [];
     const re = /\{(\d+)\}/g;
@@ -200,7 +448,7 @@ function rebuildFromTemplate(translated: string, placeholders: any[]): any[] {
     let m: RegExpExecArray | null;
     while ((m = re.exec(translated)) != null) {
         if (m.index > last) result.push(translated.slice(last, m.index));
-        result.push(placeholders[Number(m[1])] ?? "");
+        result.push(translateNode(placeholders[Number(m[1])] ?? ""));
         last = m.index + m[0].length;
     }
     if (last < translated.length) result.push(translated.slice(last));
@@ -210,6 +458,25 @@ function rebuildFromTemplate(translated: string, placeholders: any[]): any[] {
 // ─────────────────────────────────────────────────────────────────────────────
 // منطق الترجمة المشترك (يُستخدَم على intl الأساسي وعلى الكائنات الناتجة عن withFormatters)
 // ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * يترجم قيم العناصر النائبة التي تُطابق نمطاً رقمياً قبل حقنها في القالب.
+ * ضروري لأنّ "Active {timeAgo}" يُترجَم إلى «نشط {timeAgo}»، لكن ديسكورد يملأ
+ * timeAgo بالنصّ الإنجليزي «6 hours ago» فيخرج «نشط 6 hours ago» مختلطاً.
+ * نقتصر على numericTemplate (أنماط مُثبَّتة بـ ^…$: وقت/عدّ) حتى لا نُترجم اسم
+ * مستخدم أو قناة يُمرَّر كقيمة {user}/{channel}.
+ */
+function translateValues(values: any): any {
+    if (values == null || typeof values !== "object") return values;
+    let out: Record<string, any> | null = null;
+    for (const k in values) {
+        const v = values[k];
+        if (typeof v !== "string") continue;
+        const tr = numericTemplate(v.trim());
+        if (tr != null) (out ??= { ...values })[k] = tr;
+    }
+    return out ?? values;
+}
 
 function translateString(orig: StrFn, msg: any, values: any, methodName: string): any {
     const out = orig(msg, values);
@@ -224,7 +491,7 @@ function translateString(orig: StrFn, msg: any, values: any, methodName: string)
         const tmpl = recoverTemplate(orig, msg, values);
         if (tmpl != null && tmpl !== out) {
             const arTmpl = lookup(tmpl);
-            if (arTmpl != null) return diag(true, formatMessage(arTmpl, values));
+            if (arTmpl != null) return diag(true, formatMessage(arTmpl, translateValues(values)));
             collect(tmpl);
             return diag(false, out);
         }
@@ -251,6 +518,12 @@ function translatePartsArray(parts: any[]): any {
         const joined = parts.join("");
         const ar = lookup(joined);
         if (ar != null) return [diag(true, ar)];
+        // Baked-number strings ("3 New Mentions", "257 New") arrive here as all-string parts.
+        // This was the ONE translation path that skipped the numeric patterns, so those
+        // badges stayed English despite matching a pattern. Trimmed because the patterns are
+        // ^…$-anchored and the joined text may carry surrounding whitespace.
+        const num = numericTemplate(joined.trim());
+        if (num != null) return [diag(true, num)];
         collect(joined);
         return settings.store.diagnosticMode ? [diag(false, joined)] : parts;
     }
@@ -265,10 +538,22 @@ function translatePartsArray(parts: any[]): any {
     const arTmpl = lookup(template);
     if (arTmpl != null) return rebuildFromTemplate(arTmpl, placeholders);
 
+    // نمط رقمي على *القالب* نفسه: القوالب المختلطة التي فيها سعر/تاريخ/عدد مخبوز لا تصلح
+    // مفاتيحَ قاموس (القيمة تتغيّر)، وكان هذا المسار الوحيد الذي لا يجرّب الأنماط — فتُقطَّع
+    // الجملة إلى شظايا في المسار (ج) ويخرج ترتيبها العربي مقلوباً. الأنماط التي تُنتج {0}
+    // موجودة أصلاً في القائمة أعلاه، وهذا يجعلها تعمل هنا أيضاً بترتيب صحيح.
+    const numTmpl = numericTemplate(template);
+    if (numTmpl != null) return rebuildFromTemplate(numTmpl, placeholders);
+
     // (ج) ترجمة كل جزء نصّي على حدة (يحلّ الأوصاف ذات الروابط)، مع حفظ المسافات والعناصر.
     let changed = false;
     const perPart = parts.map(p => {
-        if (typeof p !== "string") return p;
+        // العناصر (روابط/عريض) قد تحوي نصّاً إنجليزيّاً بدورها — نفس عطب النوائب أعلاه.
+        if (typeof p !== "string") {
+            const r = translateNode(p);
+            if (r !== p) changed = true;
+            return r;
+        }
         const mt = p.match(/^(\s*)([\s\S]*?)(\s*)$/);
         const lead = mt?.[1] ?? "";
         const core = mt?.[2] ?? p;
@@ -276,6 +561,12 @@ function translatePartsArray(parts: any[]): any {
         if (core.length < 2) return p;
         const t = lookup(core);
         if (t != null) { changed = true; return lead + t + trail; }
+        // احتياطي الأنماط الرقمية — كان مستدعىً في translateString وtranslateFormat وغائباً
+        // عن هذا المسار وحده. فكانت نصوص مثل "Spectators - 2" الواصلة ضمن مصفوفة أجزاء
+        // تُجمَع «مفقودةً» رغم وجود نمطها، فعُولجت بإضافة كل رقم للقاموس يدوياً (0 ثمّ 1…)
+        // — وهي مطاردة لا تنتهي: كل عدد جديد يعود بالإنجليزية حتى يُضاف بيده.
+        const num = numericTemplate(core);
+        if (num != null) { changed = true; return lead + num + trail; }
         collect(core); // اجمع الجملة المفقودة نفسها (أنفع للحصاد من جمع القالب)
         return p;
     });
@@ -301,7 +592,7 @@ function translateFormat(orig: StrFn, msg: any, values: any): any {
         const tmpl = recoverTemplate(orig, msg, values);
         if (tmpl != null && tmpl !== out) {
             const arTmpl = lookup(tmpl);
-            if (arTmpl != null) return diag(true, formatMessage(arTmpl, values));
+            if (arTmpl != null) return diag(true, formatMessage(arTmpl, translateValues(values)));
             collect(tmpl);
             return diag(false, out);
         }

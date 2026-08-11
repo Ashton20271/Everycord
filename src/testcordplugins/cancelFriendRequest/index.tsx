@@ -49,7 +49,7 @@ function getUserIdFromOutgoingRelationships(): string | null {
     return null;
 }
 
-let observer: MutationObserver | null = null;
+let observer: ReturnType<typeof setInterval> | null = null;
 const patchedButtons = new Set<HTMLElement>();
 
 function patchBtn(btn: HTMLElement, userId: string) {
@@ -129,16 +129,18 @@ export default definePlugin({
     authors: [{ name: "Nightcord", id: 0n }],
 
     start() {
-        observer = new MutationObserver(() => {
+        observer = setInterval(() => {
             if (scanTimer) return;
+            // Check the store before scheduling. Without an outgoing request there is
+            // nothing to patch, so the two substring-class document sweeps inside scan()
+            // would walk the whole tree for nothing.
+            if (!hasOutgoingRequests()) return;
             scanTimer = setTimeout(() => {
                 scanTimer = null;
                 scan(document);
             }, 300);
-        });
-        observer.observe(document.body, { childList: true, subtree: true });
+        }, 1000);
         scan(document);
-        console.log("[CancelFriendRequest] Started ✓");
     },
 
     stop() {
@@ -146,8 +148,7 @@ export default definePlugin({
             clearTimeout(scanTimer);
             scanTimer = null;
         }
-        observer?.disconnect();
-        observer = null;
+        if (observer) { clearInterval(observer); observer = null; }
         for (const btn of patchedButtons) {
             const handler = (btn as any)._cfpHandler;
             if (handler) {

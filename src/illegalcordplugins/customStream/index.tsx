@@ -24,7 +24,7 @@ import { ImageIcon } from "@components/Icons";
 import definePlugin, { OptionType } from "@utils/types";
 import type { RenderModalProps } from "@vencord/discord-types";
 import { findComponentByCodeLazy } from "@webpack";
-import { Alerts, Button, Menu, Modal, openModal, React, showToast, Text, Toasts, useEffect, useRef,UserStore, useState } from "@webpack/common";
+import { Alerts, Button, Menu, Modal, openModal, React, showToast, Text, Toasts, useEffect, useRef, UserStore, useState } from "@webpack/common";
 
 // Компонент кнопки в панели
 const PanelButton = findComponentByCodeLazy(".GREEN,positionKeyStemOverride:");
@@ -887,6 +887,7 @@ function ImagePickerModal({ rootProps }: { rootProps: RenderModalProps; }) {
     return (
         <Modal
             {...rootProps}
+            onClose={handleCancel}
             size="lg"
             title="Stream Preview"
             actionBarInput={
@@ -2158,7 +2159,6 @@ function getCustomThumbnail(originalThumbnail: string): string {
 export default definePlugin({
     name: "CustomStreamTopQ",
     description: "Custom stream preview images with profiles & slideshow. GitHub: https://github.com/MrTopQ/customStream-Vencord",
-    tags: ["Voice", "Media"],
     authors: [
         {
             name: "TopQ",
@@ -2172,7 +2172,7 @@ export default definePlugin({
     patches: [
         {
             // Патч для добавления кнопки в панель (рядом с микрофоном/наушниками)
-            find: ".DISPLAY_NAME_STYLES_COACHMARK)",
+            find: "#{intl::USER_PROFILE_ACCOUNT_POPOUT_BUTTON_A11Y_LABEL}",
             replacement: {
                 // Матчим начало массива children после чего угодно, главное чтобы был accountContainerRef дальше
                 match: /(children:\[)(.{0,150}?)(accountContainerRef)/,

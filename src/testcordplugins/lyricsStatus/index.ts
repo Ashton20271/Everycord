@@ -18,10 +18,18 @@ const settings = definePluginSettings({
         description: "Status template. {lyrics} = current lyric, {song} = track name, {artist} = artist name.",
         default: "🎵 {lyrics}",
     },
-    clearOnStop: {
+    customMessageOnStop: {
         type: OptionType.BOOLEAN,
-        description: "Clear your custom status when music stops or you disable the plugin.",
+        description: "Set a custom message as your status when music stops or you disable the plugin",
         default: true,
+    },
+    customMessage: {
+        type: OptionType.STRING,
+        description: "The custom message (leave blank to clear).",
+        default: "",
+        hidden() {
+            return !settings.store.customMessageOnStop;
+        },
     },
 });
 
@@ -64,17 +72,18 @@ function cleanTrackName(name: string): string {
         .trim();
 }
 
-async function fetchLyrics(track: string, artist: string, id: string): Promise<SyncedLine[] | null> {
+async function fetchLyrics(track: string, artist: string, id: string, signal?: AbortSignal): Promise<SyncedLine[] | null> {
     if (lyricsCache.has(id)) return lyricsCache.get(id) ?? null;
     const cleanedTrack = cleanTrackName(track);
     try {
-        const res = await fetch(`https://lrclib.net/api/get?${new URLSearchParams({ track_name: cleanedTrack, artist_name: artist })}`);
+        const res = await fetch(`https://lrclib.net/api/get?${new URLSearchParams({ track_name: cleanedTrack, artist_name: artist })}`, { signal });
         if (!res.ok) { lyricsCache.set(id, null); return null; }
         const data = await res.json() as { syncedLyrics?: string; };
         const lines = data.syncedLyrics ? parseLrc(data.syncedLyrics) : null;
         lyricsCache.set(id, lines);
         return lines;
     } catch (e) {
+        if (signal?.aborted) return null;
         logger.warn("LrcLib fetch failed:", e);
         lyricsCache.set(id, null);
         return null;
@@ -108,10 +117,10 @@ function setStatus(text: string) {
     });
 }
 
-function clearStatus() {
+function customStatus() {
     lastSentLine = null;
     CustomStatusSetting?.updateSetting({
-        text: "",
+        text: settings.store.customMessage,
         expiresAtMs: "0",
         emojiId: "0",
         emojiName: "",
@@ -123,9 +132,12 @@ function clearStatus() {
 
 let intervalId: ReturnType<typeof setInterval> | null = null;
 let currentLines: SyncedLine[] | null = null;
+let active = false;
+let lyricGeneration = 0;
+let lyricsAbortController: AbortController | null = null;
 
 function tick() {
-    if (!isPlaying || !currentLines) return;
+    if (!active || !isPlaying || !currentLines) return;
     const line = getCurrentLine(currentLines, getPosition());
     if (!line) return;
     const text = settings.store.format
@@ -156,13 +168,22 @@ function onSpotifyPlayerState(e: SpotifyPlayerState) {
 
     if (trackChanged) {
         currentLines = null;
+        lyricsAbortController?.abort();
+        const generation = ++lyricGeneration;
         if (currentTrackId) {
-            fetchLyrics(currentTrackName, currentArtist, currentTrackId)
-                .then(lines => { currentLines = lines; });
+            const abortController = new AbortController();
+            lyricsAbortController = abortController;
+            fetchLyrics(currentTrackName, currentArtist, currentTrackId, abortController.signal)
+                .then(lines => {
+                    if (active && generation === lyricGeneration && currentTrackId === newId) currentLines = lines;
+                })
+                .finally(() => {
+                    if (lyricsAbortController === abortController) lyricsAbortController = null;
+                });
         }
     }
 
-    if (!isPlaying && settings.store.clearOnStop) clearStatus();
+    if (!isPlaying && (settings.store.customMessageOnStop)) customStatus();
 }
 
 export default definePlugin({
@@ -173,14 +194,19 @@ export default definePlugin({
     settings,
 
     start() {
+        active = true;
         FluxDispatcher.subscribe("SPOTIFY_PLAYER_STATE", onSpotifyPlayerState as any);
-        intervalId = setInterval(tick, 500);
+        intervalId = setInterval(tick, 2000);
     },
 
     stop() {
+        active = false;
+        lyricGeneration++;
+        lyricsAbortController?.abort();
+        lyricsAbortController = null;
         FluxDispatcher.unsubscribe("SPOTIFY_PLAYER_STATE", onSpotifyPlayerState as any);
         if (intervalId !== null) { clearInterval(intervalId); intervalId = null; }
-        if (settings.store.clearOnStop) clearStatus();
+        if (!isPlaying && (settings.store.customMessageOnStop)) customStatus();
         currentLines = null;
         lyricsCache.clear();
         lastSentLine = null;
