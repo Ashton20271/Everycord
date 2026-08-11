@@ -333,7 +333,7 @@ export default definePlugin({
 
     commands: [
         {
-            name: "opencord-debug",
+            name: "everycord-debug",
             description: "Send OpenCord debug info",
             // @ts-ignore
             predicate: ctx => isAnyPluginDev(UserStore.getCurrentUser()?.id) || isOpenCordGuild(ctx?.guild?.id, true),
@@ -347,7 +347,7 @@ export default definePlugin({
             execute: async () => ({ content: await generateDebugInfoMessage() })
         },
         {
-            name: "opencord-plugins",
+            name: "everycord-plugins",
             description: "Send OpenCord plugin list",
             // @ts-ignore
             predicate: ctx => isAnyPluginDev(UserStore.getCurrentUser()?.id) || isOpenCordGuild(ctx?.guild?.id, true),
@@ -494,14 +494,14 @@ export default definePlugin({
         }
 
         if (openCordSupport && isSupportChannel(props.channel.id) && PermissionStore.can(PermissionsBits.SEND_MESSAGES, props.channel)) {
-            if (["/opencord-debug", "/opencord-plugins", "/equicord-debug", "/equicord-plugins"].some(command => props.message.content.includes(command))) {
+            if (["/everycord-debug", "/everycord-plugins", "/equicord-debug", "/equicord-plugins"].some(command => props.message.content.includes(command))) {
                 buttons.push(
                     <Button
                         key="vc-dbg"
                         variant="secondary"
                         onClick={async () => sendMessage(props.channel.id, { content: await generateDebugInfoMessage() })}
                     >
-                        Run /opencord-debug
+                        Run /everycord-debug
                     </Button>,
                     <Button
                         key="vc-plg-list"
@@ -521,7 +521,7 @@ export default definePlugin({
                             }
                         }}
                     >
-                        Run /opencord-plugins
+                        Run /everycord-plugins
                     </Button>
                 );
             }

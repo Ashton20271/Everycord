@@ -17,7 +17,7 @@ import equicordplusIcon from "file://../../../../../assets/branding/equicordplus
 import esharqIcon from "file://../../../../../assets/branding/esharq-icon.png?base64";
 import illegalcordIcon from "file://../../../../../assets/branding/illegalcord-icon.png?base64";
 import mallcordIcon from "file://../../../../../assets/branding/mallcord-icon.png?base64";
-import opencordSymbol from "file://../../../../../assets/branding/opencord-symbol-dark.svg?base64";
+import everycordSymbol from "file://../../../../../assets/branding/everycord-symbol-dark.svg?base64";
 import testcordIcon from "file://../../../../../assets/branding/testcord-icon.png?base64";
 
 import { PluginMeta } from "~plugins";
@@ -26,7 +26,7 @@ import { openPluginModal } from "./PluginModal";
 
 const logger = new Logger("PluginCard");
 const cl = classNameFactory("vc-plugins-");
-const OPENCORD_SYMBOL_URL = "data:image/" + "svg+xml;base64," + opencordSymbol;
+const OPENCORD_SYMBOL_URL = "data:image/" + "svg+xml;base64," + everycordSymbol;
 const ILLEGALCORD_ICON_URL = "data:image/png;base64," + illegalcordIcon;
 const TESTCORD_ICON_URL = "data:image/png;base64," + testcordIcon;
 const ESHARQ_ICON_URL = "data:image/png;base64," + esharqIcon;
@@ -46,7 +46,7 @@ export function PluginCard({ plugin, disabled, onRestartNeeded, onMouseEnter, on
     const settings = Settings.plugins[plugin.name];
     const pluginMeta = PluginMeta[plugin.name];
     const { folderName } = pluginMeta;
-    const isOpenCordPlugin = folderName.startsWith("src/opencordplugins/") ?? false;
+    const isOpenCordPlugin = folderName.startsWith("src/everycordplugins/") ?? false;
     const isEquicordPlugin = folderName.startsWith("src/equicordplugins/") ?? false;
     const isVencordPlugin = folderName.startsWith("src/plugins/") ?? false;
     const isIllegalcordPlugin = folderName.startsWith("src/illegalcordplugins/") ?? false;

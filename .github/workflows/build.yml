@@ -52,14 +52,14 @@ jobs:
                   go get -v
                   go mod vendor
                   git apply patches/wayland.patch
-                  CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -v -tags static -ldflags "-s -w -X 'equilotl/buildinfo.InstallerGitHash=$(git rev-parse --short HEAD)' -X 'equilotl/buildinfo.InstallerTag=opencord'" -o OpenCord-x11
-                  CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -v -tags "cli" -ldflags "-s -w -X 'equilotl/buildinfo.InstallerGitHash=$(git rev-parse --short HEAD)' -X 'equilotl/buildinfo.InstallerTag=opencord'" -o OpenCordCli-linux
+                  CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -v -tags static -ldflags "-s -w -X 'equilotl/buildinfo.InstallerGitHash=$(git rev-parse --short HEAD)' -X 'equilotl/buildinfo.InstallerTag=everycord'" -o OpenCord-x11
+                  CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -v -tags "cli" -ldflags "-s -w -X 'equilotl/buildinfo.InstallerGitHash=$(git rev-parse --short HEAD)' -X 'equilotl/buildinfo.InstallerTag=everycord'" -o OpenCordCli-linux
                   chmod +x OpenCord-x11 OpenCordCli-linux
 
             - name: Upload Linux installer artifacts
               uses: actions/upload-artifact@v7
               with:
-                  name: opencord-installers-linux
+                  name: everycord-installers-linux
                   path: |
                       Equilotl/OpenCord-x11
                       Equilotl/OpenCordCli-linux
@@ -103,13 +103,13 @@ jobs:
                   go get -v
                   go install github.com/tc-hib/go-winres@latest
                   go-winres make --product-version "git-tag"
-                  CGO_ENABLED=1 GOOS=windows GOARCH=amd64 go build -v -tags "static gui" -ldflags "-s -w -H=windowsgui -extldflags=-static -X 'equilotl/buildinfo.InstallerGitHash=$(git rev-parse --short HEAD)' -X 'equilotl/buildinfo.InstallerTag=opencord'" -o OpenCordInstaller.exe
-                  CGO_ENABLED=1 GOOS=windows GOARCH=amd64 go build -v -tags "cli" -ldflags "-s -w -X 'equilotl/buildinfo.InstallerGitHash=$(git rev-parse --short HEAD)' -X 'equilotl/buildinfo.InstallerTag=opencord'" -o OpenCordInstallerCli.exe
+                  CGO_ENABLED=1 GOOS=windows GOARCH=amd64 go build -v -tags "static gui" -ldflags "-s -w -H=windowsgui -extldflags=-static -X 'equilotl/buildinfo.InstallerGitHash=$(git rev-parse --short HEAD)' -X 'equilotl/buildinfo.InstallerTag=everycord'" -o OpenCordInstaller.exe
+                  CGO_ENABLED=1 GOOS=windows GOARCH=amd64 go build -v -tags "cli" -ldflags "-s -w -X 'equilotl/buildinfo.InstallerGitHash=$(git rev-parse --short HEAD)' -X 'equilotl/buildinfo.InstallerTag=everycord'" -o OpenCordInstallerCli.exe
 
             - name: Upload Windows installer artifacts
               uses: actions/upload-artifact@v7
               with:
-                  name: opencord-installers-windows
+                  name: everycord-installers-windows
                   path: |
                       Equilotl/OpenCordInstaller.exe
                       Equilotl/OpenCordInstallerCli.exe
@@ -158,8 +158,8 @@ jobs:
               working-directory: Equilotl
               run: |
                   go get -v
-                  CGO_CFLAGS="-mmacosx-version-min=10.15" CGO_LDFLAGS="-mmacosx-version-min=10.15" CGO_ENABLED=1 GOOS=darwin GOARCH=${{ matrix.arch }} go build -v -tags "static gui" -ldflags "-s -w -X 'equilotl/buildinfo.InstallerGitHash=$(git rev-parse --short HEAD)' -X 'equilotl/buildinfo.InstallerTag=opencord'" -o OpenCordInstaller
-                  CGO_CFLAGS="-mmacosx-version-min=10.15" CGO_LDFLAGS="-mmacosx-version-min=10.15" CGO_ENABLED=1 GOOS=darwin GOARCH=${{ matrix.arch }} go build -v -tags "cli" -ldflags "-s -w -X 'equilotl/buildinfo.InstallerGitHash=$(git rev-parse --short HEAD)' -X 'equilotl/buildinfo.InstallerTag=opencord'" -o ${{ matrix.cli_name }}
+                  CGO_CFLAGS="-mmacosx-version-min=10.15" CGO_LDFLAGS="-mmacosx-version-min=10.15" CGO_ENABLED=1 GOOS=darwin GOARCH=${{ matrix.arch }} go build -v -tags "static gui" -ldflags "-s -w -X 'equilotl/buildinfo.InstallerGitHash=$(git rev-parse --short HEAD)' -X 'equilotl/buildinfo.InstallerTag=everycord'" -o OpenCordInstaller
+                  CGO_CFLAGS="-mmacosx-version-min=10.15" CGO_LDFLAGS="-mmacosx-version-min=10.15" CGO_ENABLED=1 GOOS=darwin GOARCH=${{ matrix.arch }} go build -v -tags "cli" -ldflags "-s -w -X 'equilotl/buildinfo.InstallerGitHash=$(git rev-parse --short HEAD)' -X 'equilotl/buildinfo.InstallerTag=everycord'" -o ${{ matrix.cli_name }}
                   mkdir -p OpenCordInstaller.app/Contents/MacOS OpenCordInstaller.app/Contents/Resources
                   cp macos/Info.plist OpenCordInstaller.app/Contents/Info.plist
                   mv OpenCordInstaller OpenCordInstaller.app/Contents/MacOS/OpenCordInstaller
@@ -169,7 +169,7 @@ jobs:
             - name: Upload macOS installer artifacts
               uses: actions/upload-artifact@v7
               with:
-                  name: opencord-installers-macos-${{ matrix.arch }}
+                  name: everycord-installers-macos-${{ matrix.arch }}
                   path: |
                       Equilotl/${{ matrix.gui_name }}
                       Equilotl/${{ matrix.cli_name }}
@@ -248,7 +248,7 @@ jobs:
             - name: Download installer artifacts
               uses: actions/download-artifact@v8
               with:
-                  pattern: opencord-installers-*
+                  pattern: everycord-installers-*
                   path: dist/installer-assets
                   merge-multiple: true
 

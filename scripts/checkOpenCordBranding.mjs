@@ -27,33 +27,33 @@ const agents = agentGuidanceDocs["AGENTS.md"];
 const constants = readFileSync(join(root, "src", "utils", "constants.ts"), "utf8");
 const vencordPluginRoot = join(root, "src", "plugins");
 const equicordPluginRoot = join(root, "src", "equicordplugins");
-const opencordPluginRoot = join(root, "src", "opencordplugins");
-const canonicalOpenCordDarkSymbol = "assets/branding/opencord-symbol-dark.svg";
-const canonicalOpenCordLightSymbol = "assets/branding/opencord-symbol-light.svg";
-const browserOpenCordDarkSymbol = "browser/opencord-symbol-dark.svg";
-const canonicalOpenCordSymbolMarker = "opencord-symbol-dark.svg";
-const legacyOpenCordSymbolMarker = "opencord-symbol.svg";
+const everycordPluginRoot = join(root, "src", "everycordplugins");
+const canonicalOpenCordDarkSymbol = "assets/branding/everycord-symbol-dark.svg";
+const canonicalOpenCordLightSymbol = "assets/branding/everycord-symbol-light.svg";
+const browserOpenCordDarkSymbol = "browser/everycord-symbol-dark.svg";
+const canonicalOpenCordSymbolMarker = "everycord-symbol-dark.svg";
+const legacyOpenCordSymbolMarker = "everycord-symbol.svg";
 const legacyOpenCordSymbolArtifacts = [
-    "assets/branding/opencord-symbol.svg",
-    "assets/branding/opencord-symbol-candidate-01-open-orbit.svg",
-    "assets/branding/opencord-symbol-candidate-02-unlocked-chat.svg",
-    "assets/branding/opencord-symbol-candidate-03-chat-gate.svg",
-    "assets/branding/opencord-symbol-candidate-04-open-node.svg",
-    "assets/branding/opencord-symbol-candidate-05-open-bubble.svg",
-    "assets/branding/opencord-symbol-candidates.md",
-    "assets/branding/v2/opencord-symbol-candidates-v2.md",
-    "assets/branding/v2/opencord-symbol-candidate-v2-01-halo-arc.svg",
-    "assets/branding/v2/opencord-symbol-candidate-v2-02-open-beacon.svg",
-    "assets/branding/v2/opencord-symbol-candidate-v2-03-prism-core.svg",
-    "assets/branding/v2/opencord-symbol-candidate-v2-04-breach.svg",
-    "assets/branding/v2/opencord-symbol-candidate-v2-05-dual-helix.svg",
-    "assets/branding/v3/opencord-symbol-candidates-v3.md",
-    "assets/branding/v3/opencord-symbol-candidate-v3-01-open-core.svg",
-    "assets/branding/v3/opencord-symbol-candidate-v3-02-open-gate.svg",
-    "assets/branding/v3/opencord-symbol-candidate-v3-03-open-path.svg",
-    "assets/branding/v3/opencord-symbol-candidate-v3-04-open-sign.svg",
-    "assets/branding/v3/opencord-symbol-candidate-v3-05-open-arc.svg",
-    "browser/opencord-symbol.svg",
+    "assets/branding/everycord-symbol.svg",
+    "assets/branding/everycord-symbol-candidate-01-open-orbit.svg",
+    "assets/branding/everycord-symbol-candidate-02-unlocked-chat.svg",
+    "assets/branding/everycord-symbol-candidate-03-chat-gate.svg",
+    "assets/branding/everycord-symbol-candidate-04-open-node.svg",
+    "assets/branding/everycord-symbol-candidate-05-open-bubble.svg",
+    "assets/branding/everycord-symbol-candidates.md",
+    "assets/branding/v2/everycord-symbol-candidates-v2.md",
+    "assets/branding/v2/everycord-symbol-candidate-v2-01-halo-arc.svg",
+    "assets/branding/v2/everycord-symbol-candidate-v2-02-open-beacon.svg",
+    "assets/branding/v2/everycord-symbol-candidate-v2-03-prism-core.svg",
+    "assets/branding/v2/everycord-symbol-candidate-v2-04-breach.svg",
+    "assets/branding/v2/everycord-symbol-candidate-v2-05-dual-helix.svg",
+    "assets/branding/v3/everycord-symbol-candidates-v3.md",
+    "assets/branding/v3/everycord-symbol-candidate-v3-01-open-core.svg",
+    "assets/branding/v3/everycord-symbol-candidate-v3-02-open-gate.svg",
+    "assets/branding/v3/everycord-symbol-candidate-v3-03-open-path.svg",
+    "assets/branding/v3/everycord-symbol-candidate-v3-04-open-sign.svg",
+    "assets/branding/v3/everycord-symbol-candidate-v3-05-open-arc.svg",
+    "browser/everycord-symbol.svg",
 ];
 
 const failures = [];
@@ -149,7 +149,7 @@ function readSourceTree(path) {
     return contents;
 }
 
-expectEqual("package.json name", packageJson.name, "opencord");
+expectEqual("package.json name", packageJson.name, "everycord");
 expectEqual("package.json author", packageJson.author, "OpenCord");
 expectEqual("package.json homepage", packageJson.homepage, "https://github.com/OpenCord/OpenCord#readme");
 expectEqual("package.json bugs.url", packageJson.bugs?.url, "https://github.com/OpenCord/OpenCord/issues");
@@ -167,8 +167,8 @@ expectNoLegacyVariableMismatch("discordDevBanner OpenCord description for legacy
 
 expectPluginTree("src/plugins Vencord-origin plugin tree", vencordPluginRoot);
 expectPluginTree("src/equicordplugins Equicord-origin plugin tree", equicordPluginRoot);
-expectPluginTree("src/opencordplugins OpenCord-origin plugin tree", opencordPluginRoot);
-expectPathExists("aiTranslate.desktop OpenCord namespace", "src/opencordplugins/aiTranslate.desktop");
+expectPluginTree("src/everycordplugins OpenCord-origin plugin tree", everycordPluginRoot);
+expectPathExists("aiTranslate.desktop OpenCord namespace", "src/everycordplugins/aiTranslate.desktop");
 expectPathNotExists("aiTranslate.desktop legacy Equicord namespace", "src/equicordplugins/aiTranslate.desktop");
 
 const pluginSources = readSourceTree(vencordPluginRoot);
@@ -193,7 +193,7 @@ expectAgentGuidanceIncludes("OpenCord heading", "# OpenCord Rules");
 expectAgentGuidanceIncludes("OpenCord-only SPDX guidance", "even on new OpenCord-only files");
 expectAgentGuidanceIncludes("OpenCord fork attribution", "OpenCord is a Vencord fork");
 expectAgentGuidanceIncludes("preserved SPDX naming warning", "Don't change it to \"OpenCord\" or \"Equicord\".");
-expectAgentGuidanceIncludes("OpenCord plugin path option", "`src/opencordplugins/<name>/index.tsx`");
+expectAgentGuidanceIncludes("OpenCord plugin path option", "`src/everycordplugins/<name>/index.tsx`");
 expectAgentGuidanceIncludes("OpenCord modified plugin wording", "`isModified?: true` marks an upstream Vencord plugin OpenCord modified.");
 expectAgentGuidanceIncludes("OpenCord bundle wording", "They only exist in OpenCord's bundle.");
 expectAgentGuidanceIncludes("OpenCord version constant description", "| `VERSION` | OpenCord version string |");
@@ -235,7 +235,7 @@ expectFileNotIncludes("src/plugins/xsOverlay/index.tsx", "notification source ap
 // provenance, route ids, and compatibility aliases remain allowed.
 expectFileNotIncludes("scripts/generateReport.ts", "reporter parser legacy console tag", "firstArg === \"[Equicord]\"");
 expectFileIncludes("src/components/settings/tabs/plugins/index.tsx", "OpenCord plugin filter label", "label: \"Show OpenCord\"");
-expectFileIncludes("src/components/settings/tabs/plugins/index.tsx", "OpenCord plugin filter origin detection", "src/opencordplugins/");
+expectFileIncludes("src/components/settings/tabs/plugins/index.tsx", "OpenCord plugin filter origin detection", "src/everycordplugins/");
 expectFileIncludes("src/components/settings/tabs/plugins/index.tsx", "Equicord plugin filter label", "label: \"Show Equicord\"");
 expectFileNotIncludes("src/debug/runReporter.ts", "Equicord object comment", "the Equicord object");
 expectFileNotIncludes("src/debug/runReporter.ts", "Equicord code comment", "of Equicord code");
@@ -262,11 +262,11 @@ expectFileNotIncludes("src/plugins/platformIndicators/index.tsx", "platform indi
 
 // OpenCord-owned plugin namespace guards. These checks stay scoped to plugin
 // discovery and source badges so contributor attribution remains unaffected.
-expectFileIncludes("scripts/build/common.mjs", "OpenCord plugin API scanning", "\"opencordplugins/_api\"");
-expectFileIncludes("scripts/build/common.mjs", "OpenCord plugin core scanning", "\"opencordplugins/_core\"");
-expectFileIncludes("scripts/build/common.mjs", "OpenCord plugin scanning", "\"opencordplugins\"");
-expectFileIncludes("scripts/build/build.mjs", "OpenCord native plugin scanning", "\"opencordplugins\"");
-expectFileIncludes("src/components/settings/tabs/plugins/PluginCard.tsx", "OpenCord plugin origin detection", "src/opencordplugins/");
+expectFileIncludes("scripts/build/common.mjs", "OpenCord plugin API scanning", "\"everycordplugins/_api\"");
+expectFileIncludes("scripts/build/common.mjs", "OpenCord plugin core scanning", "\"everycordplugins/_core\"");
+expectFileIncludes("scripts/build/common.mjs", "OpenCord plugin scanning", "\"everycordplugins\"");
+expectFileIncludes("scripts/build/build.mjs", "OpenCord native plugin scanning", "\"everycordplugins\"");
+expectFileIncludes("src/components/settings/tabs/plugins/PluginCard.tsx", "OpenCord plugin origin detection", "src/everycordplugins/");
 expectFileIncludes("src/components/settings/tabs/plugins/PluginCard.tsx", "OpenCord plugin badge alt text", "alt: \"OpenCord\"");
 
 // Canonical logo replacement guards. These are intentionally narrow: they only

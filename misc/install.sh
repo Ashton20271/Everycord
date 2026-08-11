@@ -8,14 +8,14 @@ if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]] ||
 fi
 
 # Configuration
-INSTALLER_PATH="$HOME/.opencord-installer"
+INSTALLER_PATH="$HOME/.everycord-installer"
 GITHUB_URL="https://github.com/MasuRii/OpenCord/releases/latest/download/OpenCordCli-linux"
 OPENCORD_ASAR_URL="https://github.com/MasuRii/OpenCord/releases/latest/download/desktop.asar"
 OPENCORD_DATA_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/OpenCord"
-OPENCORD_ASAR_PATH="$OPENCORD_DATA_DIR/opencord.asar"
+OPENCORD_ASAR_PATH="$OPENCORD_DATA_DIR/everycord.asar"
 PRIVILEGE_CMDS=("sudo" "doas")
 DEBUG=false
-LOG_FILE="$(dirname "$(realpath "$0")")/opencordinstalldebug.log"
+LOG_FILE="$(dirname "$(realpath "$0")")/everycordinstalldebug.log"
 
 # Colors for output
 RED='\033[0;31m'
@@ -88,7 +88,7 @@ check_for_updates() {
 }
 
 # Download OpenCord build
-install_opencord_build() {
+install_everycord_build() {
     echo -e "${YELLOW}Downloading latest OpenCord build...${NC}"
     mkdir -p "$OPENCORD_DATA_DIR" || error "Failed to create OpenCord data directory"
     if ! curl -sSL "$OPENCORD_ASAR_URL" --output "$OPENCORD_ASAR_PATH"; then
@@ -119,7 +119,7 @@ main() {
     debug_log "Starting installation process"
     check_root
     check_for_updates
-    install_opencord_build
+    install_everycord_build
 
     local priv_cmd
     priv_cmd=$(find_privilege_cmd)

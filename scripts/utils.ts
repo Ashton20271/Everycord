@@ -414,7 +414,7 @@ export async function parseFile(fileName: string, seen = new Set<string>(), entr
             .split(sep)
             .join(posixSep)
             .replace(/\/index\.([jt]sx?)$/, "")
-            .replace(/^src\/(?:plugins|equicordplugins|opencordplugins|illegalcordplugins|testcordplugins|esharqplugins|equicordplusplugins|mallcordplugins)\//, "");
+            .replace(/^src\/(?:plugins|equicordplugins|everycordplugins|illegalcordplugins|testcordplugins|esharqplugins|equicordplusplugins|mallcordplugins)\//, "");
 
         if (syncConfig) {
             const normalizedPath = posixNormalize(entryFileName).replace(/\\/g, "/");

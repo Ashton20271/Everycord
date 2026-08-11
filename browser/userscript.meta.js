@@ -5,7 +5,7 @@
 // @author          OpenCord (https://github.com/OpenCord)
 // @namespace       https://github.com/Equicord/Equicord
 // @supportURL      https://github.com/Equicord/Equicord
-// @icon            https://raw.githubusercontent.com/Equicord/Equicord/refs/heads/main/assets/branding/opencord-symbol-dark.svg
+// @icon            https://raw.githubusercontent.com/Equicord/Equicord/refs/heads/main/assets/branding/everycord-symbol-dark.svg
 // @license         GPL-3.0
 // @match           *://*.discord.com/*
 // @grant           GM_xmlhttpRequest

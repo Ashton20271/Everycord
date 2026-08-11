@@ -1,5 +1,5 @@
 {
-    "name": "@opencord/discord-types",
+    "name": "@everycord/discord-types",
     "author": "OpenCord & Vencord Contributors",
     "private": false,
     "description": "Typescript definitions for the webpack modules of the Discord Web app",
