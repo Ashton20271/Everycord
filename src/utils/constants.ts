@@ -1582,6 +1582,8 @@ export const EsharqDevs = Object.freeze({
     },
 } satisfies Record<string, Dev>);
 
+export const EsharqContributors = EsharqDevs;
+
 export const EquicordPlusDevs = Object.freeze({
     nobody: {
         name: "nobody",
