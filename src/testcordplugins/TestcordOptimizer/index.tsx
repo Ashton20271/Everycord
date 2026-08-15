@@ -805,6 +805,27 @@ const settings = definePluginSettings({
         description: "Apply light containment and async decode to attachment image grids. Off by default to avoid virtualized chat height jumps.",
         default: false
     },
+    reduceFpsBackground: {
+        type: OptionType.BOOLEAN,
+        description: "Limit app rendering to a few FPS when the window is in the background.",
+        default: false,
+    },
+    throttlePresence: {
+        type: OptionType.BOOLEAN,
+        description: "Reduce how often presence/activity updates are sent to the server, saving network requests.",
+        default: false,
+    },
+    limitMsgCache: {
+        type: OptionType.BOOLEAN,
+        description: "Periodically call the native GC to free message memory.",
+        default: false,
+    },
+    noSoundboardPreview: {
+        type: OptionType.BOOLEAN,
+        description: "Disable soundboard audio preview on hover.",
+        default: false,
+        restartNeeded: true
+    },
 });
 
 interface CacheEntry {
@@ -822,12 +843,173 @@ type WebkitWindow = Window & typeof globalThis & {
     webkitRTCPeerConnection?: typeof RTCPeerConnection;
 };
 
+/* -------------------------------------------------------------------------- */
+/*                       Background RAF throttle (FPS)                        */
+/* -------------------------------------------------------------------------- */
+
+let origRAF: typeof requestAnimationFrame | null = null;
+let origCancelRAF: typeof cancelAnimationFrame | null = null;
+let bgFpsActive = false;
+const rafMap = new Map<number, ReturnType<typeof setTimeout>>();
+let rafSeq = 0;
+
+function bgFrameIntervalMs(): number {
+    return 200;
+}
+
+function onVisibilityChange() {
+    if (document.hidden) {
+        installRafThrottle();
+    } else if (document.hasFocus()) {
+        uninstallRafThrottle();
+    }
+}
+
+function onWindowBlur() {
+    installRafThrottle();
+}
+
+function onWindowFocus() {
+    if (!document.hidden) uninstallRafThrottle();
+}
+
+function applyBgFpsPatch(enable: boolean) {
+    if (enable && !bgFpsActive) {
+        bgFpsActive = true;
+        document.addEventListener("visibilitychange", onVisibilityChange);
+        window.addEventListener("blur", onWindowBlur);
+        window.addEventListener("focus", onWindowFocus);
+        if (document.hidden || !document.hasFocus()) installRafThrottle();
+    } else if (!enable && bgFpsActive) {
+        bgFpsActive = false;
+        document.removeEventListener("visibilitychange", onVisibilityChange);
+        window.removeEventListener("blur", onWindowBlur);
+        window.removeEventListener("focus", onWindowFocus);
+        uninstallRafThrottle();
+    }
+}
+
+function installRafThrottle() {
+    if (origRAF || !bgFpsActive) return;
+    origRAF = window.requestAnimationFrame;
+    origCancelRAF = window.cancelAnimationFrame;
+    let lastT = 0;
+
+    (window as any).requestAnimationFrame = function (cb: FrameRequestCallback) {
+        const id = ++rafSeq;
+        const now = performance.now();
+        const delay = Math.max(0, bgFrameIntervalMs() - (now - lastT));
+        const tId = setTimeout(() => {
+            rafMap.delete(id);
+            lastT = performance.now();
+            cb(performance.now());
+        }, delay);
+        rafMap.set(id, tId);
+        return id;
+    };
+
+    window.cancelAnimationFrame = function (id: number) {
+        const tId = rafMap.get(id);
+        if (tId !== undefined) {
+            clearTimeout(tId);
+            rafMap.delete(id);
+        } else if (origCancelRAF) {
+            origCancelRAF(id);
+        }
+    };
+}
+
+function uninstallRafThrottle() {
+    if (!origRAF) return;
+    window.requestAnimationFrame = origRAF;
+    if (origCancelRAF) window.cancelAnimationFrame = origCancelRAF;
+    origRAF = null;
+    origCancelRAF = null;
+    for (const tId of rafMap.values()) clearTimeout(tId);
+    rafMap.clear();
+}
+
+/* -------------------------------------------------------------------------- */
+/*                       Presence update throttle                             */
+/* -------------------------------------------------------------------------- */
+
+const PRESENCE_DISPATCH_TYPES = new Set([
+    "LOCAL_ACTIVITY_UPDATE",
+    "RUNNING_GAMES_CHANGE",
+]);
+
+let origFluxDispatch: ((event: any) => unknown) | null = null;
+const pendingPresenceDispatch = new Map<string, { event: any; timer: ReturnType<typeof setTimeout>; }>();
+
+function flushPresenceDispatch(type: string) {
+    const pending = pendingPresenceDispatch.get(type);
+    if (!pending) return;
+    pendingPresenceDispatch.delete(type);
+    try {
+        origFluxDispatch?.call(FluxDispatcher, pending.event);
+    } catch (err) {
+        logger.warn("flush presence dispatch failed", err);
+    }
+}
+
+function patchedDispatch(event: any) {
+    if (!settings.store.throttlePresence || !event || !PRESENCE_DISPATCH_TYPES.has(event.type)) {
+        return origFluxDispatch?.call(FluxDispatcher, event);
+    }
+
+    const existing = pendingPresenceDispatch.get(event.type);
+    if (existing) clearTimeout(existing.timer);
+
+    const timer = setTimeout(() => flushPresenceDispatch(event.type), 8000);
+    pendingPresenceDispatch.set(event.type, { event, timer });
+}
+
+function applyPresenceThrottle(enable: boolean) {
+    if (enable && !origFluxDispatch) {
+        origFluxDispatch = FluxDispatcher.dispatch.bind(FluxDispatcher);
+        (FluxDispatcher as any).dispatch = patchedDispatch;
+    } else if (!enable && origFluxDispatch) {
+        for (const type of Array.from(pendingPresenceDispatch.keys())) {
+            const pending = pendingPresenceDispatch.get(type)!;
+            clearTimeout(pending.timer);
+            try { origFluxDispatch.call(FluxDispatcher, pending.event); } catch { /* ignore */ }
+        }
+        pendingPresenceDispatch.clear();
+        (FluxDispatcher as any).dispatch = origFluxDispatch;
+        origFluxDispatch = null;
+    }
+}
+
+/* -------------------------------------------------------------------------- */
+/*                          Cache cleaner (GC)                                */
+/* -------------------------------------------------------------------------- */
+
+let cacheCleanerInterval: ReturnType<typeof setInterval> | null = null;
+
+function startCacheCleaner() {
+    stopCacheCleaner();
+    cacheCleanerInterval = setInterval(() => {
+        try {
+            if (typeof (window as any).gc === "function") {
+                (window as any).gc();
+            }
+        } catch { /* ignore */ }
+    }, 5 * 60 * 1000);
+}
+
+function stopCacheCleaner() {
+    if (cacheCleanerInterval !== null) {
+        clearInterval(cacheCleanerInterval);
+        cacheCleanerInterval = null;
+    }
+}
+
 migratePluginSettings("TestcordOptimizer", "optimizerPremium");
 
 export default definePlugin({
     name: "TestcordOptimizer",
     description: "All-in-one performance suite: webpack patches (tooltip, emoji, spinner, confetti, analytics, reactions, Sentry, member list throttle, audio reset reload prevention), bounded image cache, react-spring skip, offscreen media pause, MutationObserver DOM throttle, CSS containment (messages, members, DMs, embeds, servers, channels, forum, guild list, search), backdrop-blur/sticker/effect/upsell/spoiler/box-shadow/text-shadow/filter/backdrop suppression, lazy images/iframes, rAF reduction, passive listeners, console suppression (log/debug/info/warn/group/count/assert/dir/timers), ResizeObserver throttle, memory manager, GIF freeze (canvas/css), concurrency limit, message cache trimmer, animated avatar freeze, avatar quality reducer, cache limits, idle callback optimizer, drag-and-drop suppression, spellcheck opt-out, overscroll contain, link preview suppress, canvas effects hide, chat input containment (typing lag), large text attachment containment, attachment image grid containment.",
-    tags: ["Utility", "Developers"],
+    tags: ["Utility", "Developers", "Performance"],
     authors: [TestcordDevs.x2b, TestcordDevs.SirPhantom89],
     settings,
 
@@ -892,9 +1074,10 @@ export default definePlugin({
             find: "AUDIO_RESET:function(){",
             predicate: () => settings.store.preventAudioResetReload,
             replacement: {
-                match: /AUDIO_RESET:function\(\)\{(\i\.\i\.remove\(\i\)),location\.reload\(\)\}/,
-                replace: "AUDIO_RESET:function(){$1,$self.onAudioReset()}"
-            }
+                match: /(?<=AUDIO_RESET:function\(\).{0,300}?)location\.reload\(\)/,
+                replace: "$self.onAudioReset()"
+            },
+            noWarn: true
         },
     ],
 
@@ -957,10 +1140,10 @@ export default definePlugin({
     originalConsoleAssert: null as typeof console.assert | null,
     originalConsoleDir: null as typeof console.dir | null,
     originalConsoleDirxml: null as typeof console.dirxml | null,
-    fetchQueue: [] as Array<{ target: RequestInfo | URL; init?: RequestInit; resolve: (v: Response) => void; reject: (v: unknown) => void }>,
+    fetchQueue: [] as Array<{ target: RequestInfo | URL; init?: RequestInit; resolve: (v: Response) => void; reject: (v: unknown) => void; }>,
     rICMessagePort: null as MessagePort | null,
     rICMessagePort1: null as MessagePort | null,
-    rICCallbacks: null as Map<number, { cb: IdleRequestCallback; options?: IdleRequestOptions }> | null,
+    rICCallbacks: null as Map<number, { cb: IdleRequestCallback; options?: IdleRequestOptions; }> | null,
     cacheTrimActivityHandler: null as (() => void) | null,
     suppressConsoleWarnEl: null as HTMLStyleElement | null,
     reactionStyleEl: null as HTMLStyleElement | null,
@@ -1102,6 +1285,9 @@ export default definePlugin({
         this.restoreConsoleDirSuppression();
         this.teardownDragAndDrop();
         this.teardownSpellcheckOpt();
+        applyBgFpsPatch(false);
+        applyPresenceThrottle(false);
+        stopCacheCleaner();
         this.teardownReactionSimplifier();
         this.teardownUnreadBadgeKiller();
         this.teardownCanvasSuppressor();
@@ -2462,7 +2648,7 @@ export default definePlugin({
         const channel = new MessageChannel();
         this.rICMessagePort1 = channel.port1;
         this.rICMessagePort = channel.port2;
-        const callbacks = new Map<number, { cb: IdleRequestCallback; options?: IdleRequestOptions }>();
+        const callbacks = new Map<number, { cb: IdleRequestCallback; options?: IdleRequestOptions; }>();
         this.rICCallbacks = callbacks;
         let nextId = 1;
         channel.port1.onmessage = () => {
@@ -2877,14 +3063,14 @@ export default definePlugin({
         if (typeof window.RTCPeerConnection === "undefined") return;
         const noop: any = function () { return noopProto; };
         const noopProto = {
-            close: () => {},
+            close: () => { },
             createOffer: () => Promise.reject(new Error("Voice disabled")),
             createAnswer: () => Promise.reject(new Error("Voice disabled")),
             setLocalDescription: () => Promise.resolve(),
             setRemoteDescription: () => Promise.resolve(),
             addIceCandidate: () => Promise.resolve(),
-            addTrack: () => {},
-            removeTrack: () => {},
+            addTrack: () => { },
+            removeTrack: () => { },
             getTransceivers: () => [],
             getSenders: () => [],
             getReceivers: () => [],
@@ -2944,6 +3130,7 @@ export default definePlugin({
 
     installFluxThrottle() {
         if (this.fluxThrottleState) return;
+        if (!FluxDispatcher?.dispatch) return;
 
         const origDispatch = FluxDispatcher.dispatch.bind(FluxDispatcher);
         const THROTTLED = new Set(["TYPING_START", "TYPING_STOP"]);
