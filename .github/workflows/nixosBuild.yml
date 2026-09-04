@@ -71,5 +71,5 @@ jobs:
             - name: Upload OpenCord Stable
               if: ${{ vars.ACT == 'false' }}
               run: |
-                  gh release create ${{ steps.date.outputs.date }} --latest=false
-                  gh release upload ${{ steps.date.outputs.date }} --clobber dist/release/*
+                gh release create ${{ steps.date.outputs.date }} --latest=false
+                gh release upload ${{ steps.date.outputs.date }} --force dist/release/*
