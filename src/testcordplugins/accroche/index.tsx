@@ -8,7 +8,6 @@ import { NavContextMenuPatchCallback } from "@api/ContextMenu";
 import { showNotification } from "@api/Notifications";
 import { definePluginSettings } from "@api/Settings";
 import { TestcordDevs } from "@utils/constants";
-import { sleep } from "@utils/misc";
 import definePlugin, { OptionType } from "@utils/types";
 import { findByPropsLazy, findStoreLazy } from "@webpack";
 import {
@@ -224,7 +223,7 @@ async function hookUser(userId: string, username: string) {
     if (!userVoiceState?.channelId || !currentVoiceState?.channelId) {
         verboseLog("⏳ Voice state not immediately available, waiting 500ms...");
 
-        await sleep(500);
+        await new Promise(resolve => setTimeout(resolve, 500));
 
         userVoiceState = VoiceStateStore.getVoiceStateForUser(userId);
         currentVoiceState = VoiceStateStore.getVoiceStateForUser(currentUserId);
@@ -354,7 +353,7 @@ async function anchorUser(userId: string, username: string) {
             "⏳ Voice state not immediately available for anchoring, waiting 500ms..."
         );
 
-        await sleep(500);
+        await new Promise(resolve => setTimeout(resolve, 500));
 
         userVoiceState = VoiceStateStore.getVoiceStateForUser(userId);
         currentVoiceState = VoiceStateStore.getVoiceStateForUser(currentUserId);
@@ -555,10 +554,17 @@ const UserContextMenuPatch: NavContextMenuPatchCallback = (
     children,
     { user }: { user: any; }
 ) => {
-    // Keep this path quiet: it runs on every user right-click when the plugin is enabled.
+    console.log(
+        "🔍🔍🔍 HOOK CONTEXT MENU CALLED 🔍🔍🔍",
+        user?.username || "unknown user"
+    );
     verboseLog(`🔍 Context menu called for ${user?.username || "unknown user"}`);
 
     if (!settings.store.enabled || !user) {
+        console.log("❌❌❌ PLUGIN DISABLED OR USER MISSING ❌❌❌", {
+            enabled: settings.store.enabled,
+            user: !!user,
+        });
         verboseLog(
             `❌ Plugin disabled or user missing - enabled: ${settings.store.enabled
             }, user: ${!!user}`

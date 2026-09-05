@@ -5,7 +5,6 @@
  */
 
 import { addContextMenuPatch, NavContextMenuPatchCallback, removeContextMenuPatch } from "@api/ContextMenu";
-import { sleep } from "@utils/misc";
 import { Modals, openModal } from "@utils/modal";
 import definePlugin from "@utils/types";
 import { RelationshipType } from "@vencord/discord-types/enums";
@@ -201,7 +200,7 @@ async function reapplyFakeStates() {
                     incoming: true,
                 });
             }
-            await sleep(50);
+            await new Promise(r => setTimeout(r, 50));
         } catch { }
     }
 }
@@ -373,7 +372,7 @@ async function sendFakeDM(user: any) {
         fakeDMChannelObjects.set(cid, instance);
 
         FluxDispatcher.dispatch({ type: "CHANNEL_OPEN", channelId: cid });
-        await sleep(30);
+        await new Promise(r => setTimeout(r, 30));
     }
 
     const msgId = makeSnowflake();
@@ -534,10 +533,10 @@ async function fetchAllGuildMembers(guildId: string): Promise<void> {
             query: q,
             limit: 100,
         });
-        await sleep(80);
+        await new Promise(r => setTimeout(r, 80));
     }
 
-    await sleep(1000);
+    await new Promise(r => setTimeout(r, 1000));
 
     const after = (GuildMemberStore.getMemberIds(guildId) as string[]).length;
     const loaded = after - before;
@@ -588,7 +587,7 @@ async function floodGuild(guildId: string) {
             await addPendingRequest(user);
             sent++;
         }
-        await sleep(60);
+        await new Promise(r => setTimeout(r, 60));
     }
     Toasts.show({ message: `${sent} fake friend request${sent > 1 ? "s" : ""} sent!`, type: Toasts.Type.SUCCESS, id: Toasts.genId() });
 }
@@ -636,7 +635,7 @@ async function fakeMessageRequestGuild(guildId: string) {
             await sendIncomingMessageRequest(user);
             sent++;
         }
-        await sleep(60);
+        await new Promise(r => setTimeout(r, 60));
     }
 
     Toasts.show({
@@ -649,7 +648,6 @@ async function fakeMessageRequestGuild(guildId: string) {
 let MessageRequestStore: any = null;
 
 let reapplyTimer: ReturnType<typeof setTimeout> | null = null;
-let running = false;
 let origGetRequests: Function | null = null;
 let origHasRequest: Function | null = null;
 
@@ -763,7 +761,7 @@ async function sendIncomingMessageRequest(user: any) {
 
     fakeDMChannelObjects.set(channelId, instance);
     FluxDispatcher.dispatch({ type: "CHANNEL_OPEN", channelId });
-    await sleep(30);
+    await new Promise(r => setTimeout(r, 30));
 
     const realMsgId = makeSnowflake();
     FluxDispatcher.dispatch({
@@ -886,7 +884,6 @@ export default definePlugin({
     dependencies: ["ContextMenuAPI"],
 
     async start() {
-        running = true;
         patchStore();
         patchChannelStore();
         patchAcceptFriend();
@@ -896,7 +893,6 @@ export default definePlugin({
 
         // Load persistent state then reapply dispatches
         await loadState();
-        if (!running) return;
         if (fakeState.size > 0) {
             // Delay to let Discord fully load
             reapplyTimer = setTimeout(() => { reapplyTimer = null; reapplyFakeStates(); }, 3000);
@@ -904,7 +900,6 @@ export default definePlugin({
     },
 
     stop() {
-        running = false;
         if (reapplyTimer !== null) { clearTimeout(reapplyTimer); reapplyTimer = null; }
         removeContextMenuPatch("user-context", userContextPatch);
         removeContextMenuPatch("guild-context", guildContextPatch);

@@ -1,5 +1,11 @@
+[--messageListItem] {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 44px;
+}
+
 [--messageListItem]:hover,
 [--messageListItem]:focus-within {
+    content-visibility: visible;
     position: relative;
     z-index: 2;
 }
@@ -8,5 +14,5 @@
 [--messageListItem]:focus-within + [--messageListItem],
 [--messageListItem]:has(+ [--messageListItem]:hover),
 [--messageListItem]:has(+ [--messageListItem]:focus-within) {
-    z-index: 1;
+    content-visibility: visible;
 }

@@ -19,7 +19,7 @@
 
 		glob.SparkMD5 = factory();
 	}
-})(function () {
+})(function (undefined) {
 	"use strict";
 
 	/*
@@ -445,7 +445,7 @@
 			bytes.push(parseInt(hex.substr(x, 2), 16));
 		}
 
-			return String.fromCharCode(...bytes);
+		return String.fromCharCode.apply(String, bytes);
 	}
 
 	// ---------------------------------------------------

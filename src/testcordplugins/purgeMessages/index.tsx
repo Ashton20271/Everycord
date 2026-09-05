@@ -18,7 +18,6 @@
 
 import { ApplicationCommandInputType, ApplicationCommandOptionType, findOption, sendBotMessage } from "@api/Commands";
 import { TestcordDevs } from "@utils/constants";
-import { sleep } from "@utils/misc";
 import definePlugin from "@utils/types";
 import { Channel, Message } from "@vencord/discord-types";
 import { Forms, MessageActions, MessageStore, UserStore } from "@webpack/common";
@@ -59,7 +58,7 @@ async function deleteMessages(amount: number, channel: Channel, delay: number = 
             MessageActions.deleteMessage(channelId, message.id);
             deleted++;
             if (deleted >= amount) break;
-            await sleep(delay);
+            await new Promise(resolve => setTimeout(resolve, delay));
         } catch (error) {
             console.error("[PurgeMessages] Failed to delete message:", message.id, error);
         }

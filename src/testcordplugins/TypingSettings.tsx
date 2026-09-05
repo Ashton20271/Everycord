@@ -13,8 +13,7 @@ const STYLE_ID = "smooth-typing-style";
 const CARET_ID = "smooth-typing-caret";
 
 let caretEl: HTMLDivElement | null = null;
-let rafId: number | null = null;
-let tracking = false;
+let selectionInterval: ReturnType<typeof setInterval> | null = null;
 
 const settings = definePluginSettings({
     smoothCaret: {
@@ -80,20 +79,18 @@ function injectCSS() {
     removeCSS();
     const style = document.createElement("style");
     style.id = STYLE_ID;
-    const { fadeSpeed, smoothChars, smoothScrollbar, scrollbarColor } = settings.store;
+    const { fadeSpeed, smoothScrollbar, scrollbarColor } = settings.store;
 
     style.textContent = `
-        /* Hide original caret. caret-color inherits, so setting it on the editor covers the
-           whole subtree; the previous "[class*=...] *" put a universal-key selector in the
-           bucket that gets retested against every element on every style recalc. */
-        [class*="slateTextArea"] {
+        /* Hide original caret */
+        [class*="slateTextArea"] * {
             caret-color: transparent !important;
         }
-${smoothChars ? `
+
         /* Smooth char fade-in */
         [class*="slateTextArea"] span[data-slate-string="true"] {
             animation: smoothCharIn ${fadeSpeed}ms ease-out both;
-        }` : ""}
+        }
 
         @keyframes smoothCharIn {
             from {
@@ -209,55 +206,20 @@ function updateCaretPosition() {
     caretEl.style.height = `${rect.height || 20}px`;
 }
 
-function isChatInputFocused() {
-    const focused = document.activeElement;
-    return !!(focused?.closest("[class*='slateTextArea']") || focused?.closest("[class*='textArea']"));
-}
-
-// The caret only moves when the selection, layout or focus changes, and every one of
-// those fires an event. A permanent rAF loop re-ran getSelection + getBoundingClientRect
-// 60 times a second while the chat box was focused, forcing a synchronous layout on every
-// frame — that was the typing lag. Now each event schedules at most one coalesced update.
-function scheduleCaretUpdate() {
-    if (!tracking || rafId !== null) return;
-    rafId = requestAnimationFrame(() => {
-        rafId = null;
-        if (!tracking) return;
-        if (isChatInputFocused()) updateCaretPosition();
-        else if (caretEl) caretEl.style.display = "none";
-    });
-}
-
-function onFocusChange() {
-    if (!tracking) return;
-    if (isChatInputFocused()) scheduleCaretUpdate();
-    else if (caretEl) caretEl.style.display = "none";
-}
-
 function startTracking() {
     stopTracking();
-    tracking = true;
-    document.addEventListener("selectionchange", scheduleCaretUpdate);
+    selectionInterval = setInterval(updateCaretPosition, 16);
+    document.addEventListener("selectionchange", updateCaretPosition);
     document.addEventListener("keydown", resetBlinkOnKey);
-    document.addEventListener("focusin", onFocusChange);
-    document.addEventListener("focusout", onFocusChange);
-    window.addEventListener("resize", scheduleCaretUpdate);
-    window.addEventListener("scroll", scheduleCaretUpdate, true);
-    scheduleCaretUpdate();
 }
 
 function stopTracking() {
-    tracking = false;
-    if (rafId !== null) {
-        cancelAnimationFrame(rafId);
-        rafId = null;
+    if (selectionInterval) {
+        clearInterval(selectionInterval);
+        selectionInterval = null;
     }
-    document.removeEventListener("selectionchange", scheduleCaretUpdate);
+    document.removeEventListener("selectionchange", updateCaretPosition);
     document.removeEventListener("keydown", resetBlinkOnKey);
-    document.removeEventListener("focusin", onFocusChange);
-    document.removeEventListener("focusout", onFocusChange);
-    window.removeEventListener("resize", scheduleCaretUpdate);
-    window.removeEventListener("scroll", scheduleCaretUpdate, true);
 }
 
 function resetBlinkOnKey() {

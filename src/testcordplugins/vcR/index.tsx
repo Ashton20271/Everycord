@@ -8,7 +8,6 @@ import { findGroupChildrenByChildId, NavContextMenuPatchCallback } from "@api/Co
 import { DataStore } from "@api/index";
 import { definePluginSettings } from "@api/Settings";
 import { TestcordDevs } from "@utils/constants";
-import { sleep } from "@utils/misc";
 import { ModalContent, ModalFooter, ModalHeader, ModalRoot, ModalSize,openModal } from "@utils/modal";
 import { useForceUpdater } from "@utils/react";
 import definePlugin, { OptionType } from "@utils/types";
@@ -130,7 +129,6 @@ export default definePlugin({
         "channel-context": createContextMenuPatch(),
     },
     settings,
-    stop: closeWebSockets,
 });
 
 async function executeVoiceChannelAction(guildId: string, channelId: string, duration: number, rejoin: number, delay: number, randomDelay: number, amount: number) {
@@ -151,7 +149,7 @@ async function executeVoiceChannelAction(guildId: string, channelId: string, dur
             socket.send(JSON.stringify(joinPayload));
             console.log(guildId, channelId, duration, rejoin);
         }
-        await sleep(duration + 50);
+        await new Promise(resolve => setTimeout(resolve, duration + 50));
         for (const socket of webSockets) {
             const leavePayload = {
                 op: 4,
@@ -162,7 +160,7 @@ async function executeVoiceChannelAction(guildId: string, channelId: string, dur
                     self_deaf: false
                 }
             };
-            await sleep(50);
+            await new Promise(resolve => setTimeout(resolve, 50));
             socket.send(JSON.stringify(leavePayload));
         }
     } else {
@@ -182,7 +180,7 @@ async function executeVoiceChannelAction(guildId: string, channelId: string, dur
 
             socket.send(JSON.stringify(joinPayload));
             console.log(guildId, channelId, duration, rejoin);
-            await sleep(duration + 50);
+            await new Promise(resolve => setTimeout(resolve, duration + 50));
 
             const leavePayload = {
                 op: 4,
@@ -195,12 +193,12 @@ async function executeVoiceChannelAction(guildId: string, channelId: string, dur
             };
 
             socket.send(JSON.stringify(leavePayload));
-            await sleep(randomDelay);
+            await new Promise(resolve => setTimeout(resolve, randomDelay));
         }
 
         if (shouldStop) return;
 
-        await sleep(delay);
+        await new Promise(resolve => setTimeout(resolve, delay));
         if (rejoin > 0) scheduleRejoin(guildId, channelId, duration, rejoin - 1, delay, randomDelay, amount);
     }
 }
@@ -281,14 +279,6 @@ function initializeWebSockets() {
     });
 }
 
-function closeWebSockets() {
-    shouldStop = true;
-    for (const socket of webSockets) {
-        socket.close();
-    }
-    webSockets = [];
-}
-
 let selectedGuildId = "";
 let selectedChannelId = "";
 
@@ -312,15 +302,12 @@ function VCRaperModal(props) {
     const [randomDelay, setRandomDelay] = React.useState(100);
     const [amount, setAmount] = React.useState(0);
 
-    const connectWebSockets = () => { initializeWebSockets(); };
+    const connectWebSockets = () => { true ? initializeWebSockets() : webSockets.forEach(socket => socket.close()); };
     const forceStop = () => { stopExecution(); };
 
-    React.useEffect(() => {
-        connectWebSockets();
-        loadTokensFromStorage();
-        shouldStop = false;
-        return closeWebSockets;
-    }, []);
+    connectWebSockets();
+    loadTokensFromStorage();
+    shouldStop = false;
 
     return (
         <ModalRoot {...props} size={ModalSize.DYNAMIC}>
@@ -610,10 +597,7 @@ function VCRaperModal(props) {
             <ModalFooter>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%" }}>
                     <Button
-                        onClick={() => {
-                            closeWebSockets();
-                            props.onClose();
-                        }}
+                        onClick={props.onClose}
                         style={{
                             backgroundColor: "#dc2626",
                             color: "#ffffff",

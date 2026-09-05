@@ -13,16 +13,15 @@ export default definePlugin({
     tags: ["Voice", "Utility"],
     authors: [TestcordDevs.x2b],
     patches: [
-        // Block loading Krisp module on Desktop
-        // Uses the exact function call as anchor
+        // Block loading modules on Desktop
         {
-            find: "ensureModule(\"discord_krisp\")",
+            find: "Failed to load Krisp module",
             replacement: {
-                match: /[\w$.]+\.ensureModule\("discord_krisp"\)/,
-                replace: "Promise.reject(new Error('Krisp blocked'))"
+                match: /await \i.\i.ensureModule\("discord_krisp"\)/,
+                replace: "throw new Error();$&"
             }
         },
-        // Block loading Krisp module on Web
+        // Block loading modules on Web
         {
             find: "krisp_browser_models",
             replacement: {

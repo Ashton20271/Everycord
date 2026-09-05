@@ -48,8 +48,6 @@ export default definePlugin({
 
     start() { },
 
-    stop() {},
-
     patches: [
         {
             find: '="SYSTEM_TAG"',

@@ -10,7 +10,8 @@ import { ChangeList } from "@utils/ChangeList";
 import { TestcordDevs } from "@utils/constants";
 import { ModalContent, ModalFooter, ModalHeader, ModalProps, ModalRoot, ModalSize, openModal } from "@utils/modal";
 import definePlugin from "@utils/types";
-import { Alerts, Button, Forms, Parser, React, Switch,Text, TextInput, Tooltip, useMemo } from "@webpack/common";
+import { Button, Forms, React, Switch,Text, TextInput, useMemo } from "@webpack/common";
+import { Alerts, Parser, Tooltip } from "@webpack/common";
 
 import Plugins from "~plugins";
 

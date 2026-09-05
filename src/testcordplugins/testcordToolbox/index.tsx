@@ -44,35 +44,31 @@ function Icon(props: React.SVGProps<SVGSVGElement>) {
 }
 
 function VencordPopoutButton() {
-    const buttonRef = useRef<HTMLSpanElement | null>(null);
+    const buttonRef = useRef(null);
     const [show, setShow] = useState(false);
 
     return (
-        <span ref={buttonRef} style={{ display: "inline-flex", alignItems: "center" }}>
-            <Popout
-                position="bottom"
-                align="center"
-                spacing={0}
-                animation={Popout.Animation.NONE}
-                shouldShow={show}
-                onRequestClose={() => setShow(false)}
-                targetElementRef={buttonRef}
-                renderPopout={() => renderPopout(() => setShow(false))}
-            >
-                {(_, { isShown }) => (
-                    <HeaderBarButton
-                        className="vc-toolbox-btn"
-                        onClick={e => {
-                            e.stopPropagation();
-                            setShow(prev => !prev);
-                        }}
-                        tooltip="Testcord Toolbox"
-                        icon={Icon}
-                        selected={isShown}
-                    />
-                )}
-            </Popout>
-        </span>
+        <Popout
+            position="bottom"
+            align="center"
+            spacing={0}
+            animation={Popout.Animation.NONE}
+            shouldShow={show}
+            onRequestClose={() => setShow(false)}
+            targetElementRef={buttonRef}
+            renderPopout={() => renderPopout(() => setShow(false))}
+        >
+            {(_, { isShown }) => (
+                <HeaderBarButton
+                    ref={buttonRef}
+                    className="vc-toolbox-btn"
+                    onClick={() => setShow(v => !v)}
+                    tooltip={isShown ? null : "Testcord Toolbox"}
+                    icon={Icon}
+                    selected={isShown}
+                />
+            )}
+        </Popout>
     );
 }
 

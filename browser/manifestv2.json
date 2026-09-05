@@ -6,7 +6,7 @@
     "author": "OpenCord",
     "homepage_url": "https://github.com/OpenCord/OpenCord",
     "icons": {
-        "128": "everycord-symbol-dark.svg"
+        "128": "opencord-symbol-dark.svg"
     },
     "permissions": [
         "webRequest",

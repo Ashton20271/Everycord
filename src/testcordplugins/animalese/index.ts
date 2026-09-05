@@ -26,9 +26,6 @@ const settings = definePluginSettings({
 
 let audioContext: AudioContext | null = null;
 let currentChannelId: string | null = null;
-const activeSources = new Set<AudioBufferSourceNode>();
-const MAX_SOUND_BYTES = 512 * 1024;
-const FETCH_TIMEOUT_MS = 10000;
 
 // better than my old hardcoded garbage
 const highSounds = Array.from(
@@ -53,19 +50,10 @@ async function initSoundBuffers() {
 
 async function loadSound(url: string): Promise<AudioBuffer> {
     if (!audioContext) audioContext = new AudioContext();
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-    try {
-        const response = await fetch(url, { signal: controller.signal });
-        if (!response.ok) throw new Error("Network response was not OK");
-        const length = Number(response.headers.get("content-length"));
-        if (length > MAX_SOUND_BYTES) throw new Error("Sound exceeds size limit");
-        const arrayBuffer = await response.arrayBuffer();
-        if (arrayBuffer.byteLength > MAX_SOUND_BYTES) throw new Error("Sound exceeds size limit");
-        return audioContext.decodeAudioData(arrayBuffer);
-    } finally {
-        clearTimeout(timeout);
-    }
+    const response = await fetch(url);
+    if (!response.ok) throw new Error("Network response was not OK");
+    const arrayBuffer = await response.arrayBuffer();
+    return audioContext.decodeAudioData(arrayBuffer);
 }
 
 async function generateAnimalese(text: string): Promise<AudioBuffer> {
@@ -148,8 +136,6 @@ async function playSound(buffer: AudioBuffer, volume: number) {
     source.connect(gainNode);
     gainNode.connect(audioContext.destination);
 
-    activeSources.add(source);
-    source.onended = () => activeSources.delete(source);
     source.start();
 }
 
@@ -210,18 +196,9 @@ export default definePlugin({
             this.messageCreateListener
         );
         if (audioContext) {
-            for (const source of activeSources) {
-                try {
-                    source.stop();
-                } catch {
-                    continue;
-                }
-            }
-            activeSources.clear();
             audioContext.close();
             audioContext = null;
         }
-        for (const key of Object.keys(soundBuffers)) delete soundBuffers[key];
         currentChannelId = null;
     },
 });

@@ -37,8 +37,12 @@ export default definePlugin({
             find: "#{intl::EXPRESSION_PICKER_CATEGORIES_A11Y_LABEL}",
             replacement: [
                 {
-                    match: /(\i)=((\i)\?Vencord\.Plugins\.plugins\["FavouriteAnything"\]\.renderTabs\((\i),(\i)\):null),/,
+                    match: /(\i)=((\i)\?Vencord\.Plugins\.plugins\["FavouriteAnything"\]\.renderTabs\((\i),(\i)\):null),(?=\i=em\?\(0,\i\.jsx\))/,
                     replace: "$1=$self.renderTabs($2,$4,$5),"
+                },
+                {
+                    match: /(\i)=((?:\i)\?\(0,\i\.jsx\)\((\i),\{id:\i\.\i,[^}]{20,80}?"aria-selected":(\i)===\i\.\i\.GIF[^}]{20,120}?#{intl::EXPRESSION_PICKER_GIF}[^}]{0,40}?\}\):null),/,
+                    replace: "$1=$self.renderTabs($2,$3,$4),"
                 },
                 {
                     match: /((\i)===\i\.\i\.GIF&&\i\?\(0,\i\.jsx\)\(\i\.\i,\{onSelectGIF:(\i),hideFavorites:\i,persistSearch:!0\}\):null,)/,
@@ -48,7 +52,6 @@ export default definePlugin({
         },
         {
             find: "DefaultCustomizationSections: user cannot be undefined",
-            noWarn: true,
             replacement: {
                 match: /className:R\.Q,children:\[/,
                 replace: "className:R.Q,children:[$self.renderEditProfileButton({}),",
@@ -56,7 +59,6 @@ export default definePlugin({
         },
         {
             find: "USER_SETTINGS_GUILD_PROFILE)",
-            noWarn: true,
             replacement: {
                 match: /guildId:(\i\.id),onChange:(\i)\}\)(?=.{0,25}profilePreviewTitle:)/,
                 replace: "guildId:$1,onChange:$2}),$self.renderEditProfileButton({guildId:$1})"

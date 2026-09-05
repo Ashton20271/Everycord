@@ -153,8 +153,6 @@ export default definePlugin({
         (0, eval)(theme);
         (0, eval)(highlighter);
     },
-
-    stop() {},
     async onBeforeMessageSend(channelID, message) {
         message.content = await applyRules(channelID, message.content);
     }

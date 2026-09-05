@@ -13,6 +13,7 @@ import { UserAreaButton, UserAreaRenderProps } from "@api/UserArea";
 import { Divider } from "@components/Divider";
 import ErrorBoundary from "@components/ErrorBoundary";
 import { Flex } from "@components/Flex";
+import { EquicordDevs } from "@utils/constants";
 import { t } from "@utils/esharqI18n";
 import { closeModal, ModalCloseButton as ModalCloseButtonRaw, ModalContent as ModalContentRaw, ModalFooter as ModalFooterRaw, ModalHeader as ModalHeaderRaw, ModalRoot as ModalRootRaw, ModalSize, openModal } from "@utils/modal";
 import definePlugin from "@utils/types";
@@ -175,7 +176,7 @@ export default definePlugin({
         "🖼️ Set a custom image as your Discord stream preview (Esharq)."
     ),
     tags: ["Voice", "Utility"],
-    authors: [{ name: t("مؤلف غير معروف", "Unknown"), id: 0n }],
+    authors: [EquicordDevs.LOSTSTR],
     dependencies: ["UserAreaAPI"],
 
     userAreaButton: {

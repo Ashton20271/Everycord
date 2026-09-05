@@ -12,7 +12,6 @@ import { definePluginSettings } from "@api/Settings";
 import { TestcordDevs } from "@utils/constants";
 import definePlugin, { OptionType } from "@utils/types";
 import { Message } from "@vencord/discord-types";
-import { Toasts } from "@webpack/common";
 
 interface IMessageCreate {
     type: "MESSAGE_CREATE";
@@ -359,22 +358,12 @@ const EncryptionToggleButton: ChatBarButtonFactory = ({ channel, type }) => {
                 settings.store.encryptionEnabled = newValue;
 
                 // Show confirmation
-                if (settings.store.enableBotConfirmation) {
-                    sendBotMessage(
-                        channel?.id ?? "",
-                        {
-                            content: `🔐 Encryption ${newValue ? "enabled" : "disabled"}!`
-                        }
-                    );
-                }
-
-                if (settings.store.enableToastConfirmation) {
-                    Toasts.show({
-                        message: encryptionEnabled ? "Disabled Encryption" : "Enabled Encryption",
-                        id: "SecurecordOpossumToast",
-                        type: Toasts.Type.MESSAGE
-                    });
-                }
+                sendBotMessage(
+                    channel?.id ?? "",
+                    {
+                        content: `🔐 Encryption ${newValue ? "enabled" : "disabled"}!`
+                    }
+                );
             }}
         >
             {encryptionEnabled ? <EncryptionEnabledIcon /> : <EncryptionDisabledIcon />}
@@ -411,16 +400,6 @@ const settings = definePluginSettings({
         description: "Enable/disable message encryption",
         default: false
     },
-    enableBotConfirmation: {
-        type: OptionType.BOOLEAN,
-        description: "Enable/disable bot confirmation",
-        default: true
-    },
-    enableToastConfirmation: {
-        type: OptionType.BOOLEAN,
-        description: "Enable/disable toast confirmation",
-        default: true
-    },
     enableLogging: {
         type: OptionType.BOOLEAN,
         description: "Enable/disable console logs (for debugging)",
@@ -435,7 +414,7 @@ export default definePlugin({
     authors: [{ name: "irritably", id: 928787166916640838n }, TestcordDevs.nnenaza],
     dependencies: ["HeaderBarAPI"],
     settings,
-    chatBarButton: { render: EncryptionToggleButton, icon: () => (settings.store.encryptionEnabled ? <EncryptionEnabledIcon /> : <EncryptionDisabledIcon />) },
+    chatBarButton: { render: EncryptionToggleButton, icon: () => null as any },
 
     start() {
         const { location } = settings.store;
@@ -553,6 +532,7 @@ export default definePlugin({
                     if (settings.store.enableLogging) {
                         console.log("Securecord BlazingOpossum: Extracted encrypted part:", encryptedPart);
                         console.log("Securecord BlazingOpossum: Encrypted part length:", encryptedPart.length);
+                        console.log("Securecord BlazingOpossum: Password used:", password);
                     }
 
                     // Decode message using BlazingOpossum cipher

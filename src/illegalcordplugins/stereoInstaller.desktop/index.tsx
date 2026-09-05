@@ -17,11 +17,10 @@ import { classes, removeFromArray } from "@utils/misc";
 import definePlugin, { OptionType, PluginNative, ReporterTestable } from "@utils/types";
 import { Alerts, Button, React, Select, SettingsRouter, showToast, TextInput, Toasts } from "@webpack/common";
 
-import type { ActionInfo, InstallInfo, NativeResult } from "./native";
+import type { ActionInfo, InstallInfo, NativeResult, StereoMethod2Quality } from "./native";
 
 const Native = VencordNative.pluginHelpers.StereoInstaller as PluginNative<typeof import("./native")>;
 const SETTINGS_ENTRY_KEY = "illegalcord_stereo_installer";
-const LOG_RETENTION_RESTARTS = 5;
 const DISCORD_AUDIO_COLLECTIVE_SOURCE_URL = "https://github.com/ProdHallow/Discord-Stereo-Windows-MacOS-Linux";
 const VOICE_PLAYGROUND_SOURCE_URL = "https://codeberg.org/UnpackedX/Discord-Experimental-Subsystem";
 const VOICE_PLAYGROUND_TUTORIAL_URL = "https://www.youtube.com/watch?v=zSIIganbZxg";
@@ -32,10 +31,6 @@ type LogLevel = "error" | "info" | "success" | "warning";
 interface LogEntry {
     id: number;
     line: string;
-}
-
-interface PrivateSettings {
-    logRestartCount?: number;
 }
 
 const METHOD_LABELS = {
@@ -53,9 +48,14 @@ const METHOD_OPTIONS = [
     { label: METHOD_LABELS.method2, value: "method2" }
 ] satisfies Array<{ label: string; value: InstallerMethod; }>;
 
+const METHOD_2_QUALITY_OPTIONS = [
+    { label: "128", value: "128" },
+    { label: "384", value: "384" },
+    { label: "512", value: "512" }
+] satisfies Array<{ label: string; value: StereoMethod2Quality; }>;
+
 let lastRepatchNotificationKey = "";
 let nextLogId = 0;
-let launchCounted = false;
 
 function appendLogs(existingLogs: LogEntry[], newLogs: string[] | undefined): LogEntry[] {
     return [...existingLogs, ...(newLogs ?? []).map(line => ({ id: nextLogId++, line }))];
@@ -74,22 +74,6 @@ function notifyRepatchIfNeeded(info: InstallInfo): void {
         permanent: true,
         onClick: () => SettingsRouter.openUserSettings(`${SETTINGS_ENTRY_KEY}_panel`)
     });
-}
-
-async function maintainInstallerLogs(): Promise<void> {
-    if (launchCounted) return;
-    launchCounted = true;
-
-    const savedCount = settings.store.logRestartCount;
-    const restartCount = (typeof savedCount === "number" && Number.isInteger(savedCount) && savedCount >= 0 ? savedCount : 0) + 1;
-
-    if (restartCount < LOG_RETENTION_RESTARTS) {
-        settings.store.logRestartCount = restartCount;
-        return;
-    }
-
-    const result = await Native.clearLogs().catch(() => null);
-    settings.store.logRestartCount = result?.success ? 0 : LOG_RETENTION_RESTARTS - 1;
 }
 
 function StereoWarning() {
@@ -182,6 +166,7 @@ function StereoInstallerPanel() {
     const [logs, setLogs] = React.useState<LogEntry[]>([]);
     const [busy, setBusy] = React.useState(false);
     const [installerMethod, setInstallerMethod] = React.useState<InstallerMethod>("method1");
+    const [method2Quality, setMethod2Quality] = React.useState<StereoMethod2Quality>("128");
     const voicePlaygroundUnavailable = !!info && info.platformKey !== "windows";
     const selectedLastPatch = info?.lastPatchLabels[METHOD_LAST_PATCH_KEYS[installerMethod]] ?? "--";
 
@@ -223,7 +208,6 @@ function StereoInstallerPanel() {
         const cleared = await runNative(() => Native.clearLogs());
         if (!cleared) return;
 
-        settings.store.logRestartCount = 0;
         setLogs([]);
         setStatus("Logs cleared.");
         showToast("StereoInstaller logs cleared.", Toasts.Type.SUCCESS);
@@ -249,13 +233,12 @@ function StereoInstallerPanel() {
         const result = await runNative<ActionInfo>(() => {
             if (kind === "revert") return Native.revert(root);
             if (kind === "method2Index") return Native.patchMethod2Index(root);
-            if (installerMethod === "method2") return Native.patchMethod2(root);
+            if (installerMethod === "method2") return Native.patchMethod2(root, method2Quality);
 
             return Native.patch(root);
         });
         if (!result) return;
 
-        settings.store.logRestartCount = 0;
         setInfo(result);
         setStatus("Discord will close now. Check the StereoInstaller log if it does not reopen.");
         showToast("Discord will close now to finish StereoInstaller.", Toasts.Type.SUCCESS);
@@ -271,7 +254,7 @@ function StereoInstallerPanel() {
                     {isMethod2 ? (
                         <>
                             <Paragraph>
-                                This will install the local 512 discord_voice.node and the bundled index.js into the detected discord_voice module.
+                                This will use the local {method2Quality} file from StereoMethods/Discord-Voice, rename it to discord_voice.node, and copy it into <code>{"modules\\discord_voice-1\\discord_voice"}</code>.
                             </Paragraph>
                             <Paragraph>
                                 Voice Playground Method replaces the local voice module to enable higher audio quality. Use only one method on the same Discord install.
@@ -302,7 +285,7 @@ function StereoInstallerPanel() {
             body: (
                 <div>
                     <Paragraph>
-                        This will copy index.js from StereoMethods/Discord-Voice into the detected discord_voice module.
+                        This will copy index.js from StereoMethods/Discord-Voice into <code>{"modules\\discord_voice-1\\discord_voice"}</code>.
                     </Paragraph>
                     <Paragraph>
                         Discord will close while the file is replaced. Use this only if you are fixing Voice Playground Method files or know you need that index.js.
@@ -366,6 +349,21 @@ function StereoInstallerPanel() {
                         />
                     </div>
 
+                    {installerMethod === "method2" && (
+                        <div className="vc-stereo-installer-select-row">
+                            <div>
+                                <span>Voice Playground quality</span>
+                                <Paragraph>The selected file will be installed as discord_voice.node.</Paragraph>
+                            </div>
+                            <Select
+                                options={METHOD_2_QUALITY_OPTIONS}
+                                select={(value: StereoMethod2Quality) => setMethod2Quality(value)}
+                                isSelected={(value: StereoMethod2Quality) => value === method2Quality}
+                                serialize={(value: StereoMethod2Quality) => value}
+                            />
+                        </div>
+                    )}
+
                     <div className="vc-stereo-installer-select-row">
                         <div>
                             <span>Source code</span>
@@ -393,7 +391,7 @@ function StereoInstallerPanel() {
                 {installerMethod === "method2" && (
                     <div className="vc-stereo-installer-method2-note">
                         <Paragraph>
-                            Voice Playground Method automatically installs both discord_voice.node and index.js from StereoMethods/Discord-Voice. Do not install both methods on the same client. The separate index.js button remains available for repairs.
+                            Voice Playground Method uses bundled Windows payloads from StereoMethods/Discord-Voice for higher audio quality. Do not install both methods on the same client. If Discord voice files stop working, use the bundled index.js repair and check the tutorial.
                         </Paragraph>
                         <div className="vc-stereo-installer-warning-actions">
                             <Button
@@ -472,7 +470,7 @@ function StereoInstallerPanel() {
                     <InfoLine label="Platform" value={`${info.platformLabel} ${info.readableOs}`} />
                     <InfoLine label="Voice module" value={info.voiceDir} />
                     {"logPath" in info && <InfoLine label="Log file" value={info.logPath} />}
-                    <InfoLine label="Last patch" value={`${METHOD_LABELS[installerMethod]} · ${selectedLastPatch}`} />
+                    <InfoLine label={`${METHOD_LABELS[installerMethod]} last patch`} value={selectedLastPatch} />
                 </div>
             )}
 
@@ -518,7 +516,7 @@ const settings = definePluginSettings({
         type: OptionType.COMPONENT,
         component: ErrorBoundary.wrap(StereoInstallerPanel, { noop: true }),
     }
-}).withPrivateSettings<PrivateSettings>();
+});
 
 export default definePlugin({
     name: "StereoInstaller",
@@ -542,7 +540,7 @@ export default definePlugin({
             });
         }
 
-        void maintainInstallerLogs().then(() => Native.autoDetect()).then(result => {
+        void Native.autoDetect().then(result => {
             if (result.success) notifyRepatchIfNeeded(result.data);
         }, () => void 0);
     },

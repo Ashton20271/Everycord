@@ -4,8 +4,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-import { ApplicationCommandInputType, registerCommand, sendBotMessage, unregisterCommand } from "@api/Commands";
-import { isPluginEnabled } from "@api/PluginManager";
+import { ApplicationCommandInputType, sendBotMessage } from "@api/Commands";
 import { definePluginSettings } from "@api/Settings";
 import { UserAreaButton } from "@api/UserArea";
 import { TestcordDevs } from "@utils/constants";
@@ -72,10 +71,7 @@ const fakeVoiceState = {
     selfVideo: false
 };
 
-let buttonRerender: (() => void) | null = null;
-
 function refreshVoiceState() {
-    buttonRerender?.();
     if (!wsModule || !SelectedChannelStore || !ChannelStore || !MediaEngineStore) return;
 
     const socket = wsModule.getSocket();
@@ -232,8 +228,8 @@ function FakeMuteDeafenButton() {
     const isEnabled = fakeVoiceState.selfDeaf;
 
     React.useEffect(() => {
-        buttonRerender = forceUpdate;
-        return () => { buttonRerender = null; };
+        const interval = setInterval(() => forceUpdate(), 500);
+        return () => clearInterval(interval);
     }, []);
 
     return (
@@ -251,7 +247,6 @@ function FakeMuteDeafenButton() {
 }
 
 let lastVoiceChannelId: string | null = null;
-let refreshVoiceStateTimer: ReturnType<typeof setTimeout> | null = null;
 function handleVoiceChannelChange() {
     try {
         const currentChannelId = SelectedChannelStore?.getVoiceChannelId?.();
@@ -260,9 +255,7 @@ function handleVoiceChannelChange() {
         lastVoiceChannelId = currentChannelId ?? null;
 
         if (currentChannelId && currentChannelId !== previousChannelId && (fakeVoiceState.selfMute || fakeVoiceState.selfDeaf)) {
-            if (refreshVoiceStateTimer) clearTimeout(refreshVoiceStateTimer);
-            refreshVoiceStateTimer = setTimeout(() => {
-                refreshVoiceStateTimer = null;
+            setTimeout(() => {
                 refreshVoiceState();
             }, 500);
         }
@@ -272,7 +265,6 @@ function handleVoiceChannelChange() {
 }
 
 let originalSend: any;
-let commandsRegistered = false;
 
 export default definePlugin({
     name: "FakeMuteDeafen",
@@ -280,9 +272,10 @@ export default definePlugin({
     tags: ["Voice", "Privacy"],
     authors: [TestcordDevs.x2b, TestcordDevs.dot, TestcordDevs.sirphantom89, TestcordDevs.hyyven],
     dependencies: ["CommandsAPI"],
+    enabledByDefault: true,
     settings,
 
-    start() {
+start() {
         const socket = wsModule?.getSocket?.();
         if (socket && !originalSend) {
             originalSend = socket.send;
@@ -308,56 +301,6 @@ export default definePlugin({
         if (SelectedChannelStore?.addChangeListener) {
             SelectedChannelStore.addChangeListener(handleVoiceChannelChange);
         }
-
-        if (!isPluginEnabled("FakeVoicePremium")) {
-            registerCommand({
-                inputType: ApplicationCommandInputType.BUILT_IN,
-                name: "fakemute",
-                description: "Toggle fake mute",
-                execute: (_, ctx) => {
-                    if (!settings.store.slashCommands) {
-                        sendBotMessage(ctx.channel.id, { content: "Slash commands are disabled. Enable them in FakeMuteDeafen settings." });
-                        return;
-                    }
-                    fakeVoiceState.selfMute = !fakeVoiceState.selfMute;
-                    refreshVoiceState();
-                    sendBotMessage(ctx.channel.id, { content: `🎤 Fake mute is now ${fakeVoiceState.selfMute ? "enabled" : "disabled"}.` });
-                }
-            }, "FakeMuteDeafen");
-            registerCommand({
-                inputType: ApplicationCommandInputType.BUILT_IN,
-                name: "fakedeafen",
-                description: "Toggle fake deafen",
-                execute: (_, ctx) => {
-                    if (!settings.store.slashCommands) {
-                        sendBotMessage(ctx.channel.id, { content: "Slash commands are disabled. Enable them in FakeMuteDeafen settings." });
-                        return;
-                    }
-                    fakeVoiceState.selfDeaf = !fakeVoiceState.selfDeaf;
-                    if (settings.store.autoMute) fakeVoiceState.selfMute = fakeVoiceState.selfDeaf;
-                    refreshVoiceState();
-                    const muteNote = (fakeVoiceState.selfDeaf && settings.store.autoMute) ? " (+ fake mute)" : "";
-                    sendBotMessage(ctx.channel.id, { content: `🔇 Fake deafen is now ${fakeVoiceState.selfDeaf ? "enabled" : "disabled"}${muteNote}.` });
-                }
-            }, "FakeMuteDeafen");
-            registerCommand({
-                inputType: ApplicationCommandInputType.BUILT_IN,
-                name: "fakedeafen_mute",
-                description: "Toggle fake deafen and fake mute together",
-                execute: (_, ctx) => {
-                    if (!settings.store.slashCommands) {
-                        sendBotMessage(ctx.channel.id, { content: "Slash commands are disabled. Enable them in FakeMuteDeafen settings." });
-                        return;
-                    }
-                    const next = !(fakeVoiceState.selfMute && fakeVoiceState.selfDeaf);
-                    fakeVoiceState.selfMute = next;
-                    fakeVoiceState.selfDeaf = next;
-                    refreshVoiceState();
-                    sendBotMessage(ctx.channel.id, { content: `👻 Fake mute and deafen are now ${next ? "enabled" : "disabled"}.` });
-                }
-            }, "FakeMuteDeafen");
-            commandsRegistered = true;
-        }
     },
 
     stop() {
@@ -372,21 +315,59 @@ export default definePlugin({
         } catch (e) { }
 
         document.removeEventListener("keydown", handleKeydown);
-        if (refreshVoiceStateTimer) {
-            clearTimeout(refreshVoiceStateTimer);
-            refreshVoiceStateTimer = null;
-        }
         if (SelectedChannelStore?.removeChangeListener) {
             SelectedChannelStore.removeChangeListener(handleVoiceChannelChange);
         }
-
-        if (commandsRegistered) {
-            unregisterCommand("fakemute");
-            unregisterCommand("fakedeafen");
-            unregisterCommand("fakedeafen_mute");
-            commandsRegistered = false;
-        }
     },
+
+commands: [
+        {
+            inputType: ApplicationCommandInputType.BUILT_IN,
+            name: "fakemute",
+            description: "Toggle fake mute",
+            execute: (_, ctx) => {
+                if (!settings.store.slashCommands) {
+                    sendBotMessage(ctx.channel.id, { content: "Slash commands are disabled. Enable them in FakeMuteDeafen settings." });
+                    return;
+                }
+                fakeVoiceState.selfMute = !fakeVoiceState.selfMute;
+                refreshVoiceState();
+                sendBotMessage(ctx.channel.id, { content: `🎤 Fake mute is now ${fakeVoiceState.selfMute ? "enabled" : "disabled"}.` });
+            }
+        },
+        {
+            inputType: ApplicationCommandInputType.BUILT_IN,
+            name: "fakedeafen",
+            description: "Toggle fake deafen",
+            execute: (_, ctx) => {
+                if (!settings.store.slashCommands) {
+                    sendBotMessage(ctx.channel.id, { content: "Slash commands are disabled. Enable them in FakeMuteDeafen settings." });
+                    return;
+                }
+                fakeVoiceState.selfDeaf = !fakeVoiceState.selfDeaf;
+                if (settings.store.autoMute) fakeVoiceState.selfMute = fakeVoiceState.selfDeaf;
+                refreshVoiceState();
+                const muteNote = (fakeVoiceState.selfDeaf && settings.store.autoMute) ? " (+ fake mute)" : "";
+                sendBotMessage(ctx.channel.id, { content: `🔇 Fake deafen is now ${fakeVoiceState.selfDeaf ? "enabled" : "disabled"}${muteNote}.` });
+            }
+        },
+        {
+            inputType: ApplicationCommandInputType.BUILT_IN,
+            name: "fakedeafen_mute",
+            description: "Toggle fake deafen and fake mute together",
+            execute: (_, ctx) => {
+                if (!settings.store.slashCommands) {
+                    sendBotMessage(ctx.channel.id, { content: "Slash commands are disabled. Enable them in FakeMuteDeafen settings." });
+                    return;
+                }
+                const next = !(fakeVoiceState.selfMute && fakeVoiceState.selfDeaf);
+                fakeVoiceState.selfMute = next;
+                fakeVoiceState.selfDeaf = next;
+                refreshVoiceState();
+                sendBotMessage(ctx.channel.id, { content: `👻 Fake mute and deafen are now ${next ? "enabled" : "disabled"}.` });
+            }
+        }
+    ],
 
     contextMenus: {
         "audio-device-context"(children: any[], d: any) {

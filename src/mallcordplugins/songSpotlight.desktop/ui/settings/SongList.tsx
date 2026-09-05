@@ -31,28 +31,17 @@ import {
 import { DragEvent } from "react";
 
 interface EditableSongProps {
-    index: number;
     song: Song;
     insert?: "top" | "bottom";
-    setSongRef(index: number, div: HTMLAnchorElement | null): void;
-    onDrag(index: number, event: DragEvent<HTMLAnchorElement>): void;
+    setSongRef(div: HTMLAnchorElement | null): void;
+    onDrag(event: DragEvent<HTMLAnchorElement>): void;
     onDrop(song: Song): void;
     onRemove(song: Song): void;
 }
 
-function EditableSong({ index, song, insert, setSongRef, onDrag, onDrop, onRemove }: EditableSongProps) {
+function EditableSong({ song, insert, setSongRef, onDrag, onDrop, onRemove }: EditableSongProps) {
     const { render, failed } = useRender(song);
     const [dragging, setDragging] = useState(false);
-
-    const refCallback = useCallback((div: HTMLAnchorElement | null) => setSongRef(index, div), [index, setSongRef]);
-    const dragCallback = useCallback((event: DragEvent<HTMLAnchorElement>) => {
-        setDragging(true);
-        onDrag(index, event);
-    }, [index, onDrag]);
-    const dragEndCallback = useCallback(() => {
-        setDragging(false);
-        onDrop(song);
-    }, [song, onDrop]);
 
     return (
         <Link
@@ -83,10 +72,17 @@ function EditableSong({ index, song, insert, setSongRef, onDrag, onDrop, onRemov
             draggable="true"
             data-dragging={dragging}
             data-insert={insert}
-            onDragStart={dragCallback}
-            onDrag={dragCallback}
-            onDragEnd={dragEndCallback}
-            ref={refCallback}
+            onDragStart={event => {
+                setDragging(true);
+                onDrag(event);
+            }}
+            onDrag={onDrag}
+            onDragEnd={() => {
+                setDragging(false);
+                onDrop(song);
+            }}
+            useDefaultUnderlineStyles={false}
+            ref={div => setSongRef(div)}
             className={cl("editable-song-container")}
         >
             <Flex alignItems="center" gap="12px" className={cl("editable-song")}>
@@ -215,11 +211,10 @@ export default function SongList({ localData, setLocalData }: SongListProps) {
                 if (slot === "song") {
                     return (
                         <EditableSong
-                            index={i}
                             song={song}
                             insert={last && insert === i + 1 ? "bottom" : insert === i ? "top" : undefined}
-                            setSongRef={handleRef}
-                            onDrag={handleDrag}
+                            setSongRef={element => handleRef(i, element)}
+                            onDrag={event => handleDrag(i, event)}
                             onDrop={handleDrop}
                             onRemove={handleRemove}
                             key={sid(song)}

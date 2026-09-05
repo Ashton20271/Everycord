@@ -54,28 +54,17 @@ declare global {
 }
 
 const cache = new Map<string, Uint8Array>();
-let cacheBytes = 0;
 
 function maxBytes() {
     return settings.store.maxFileSizeMb * 1024 * 1024;
 }
 
 function trimCache() {
-    const maxCacheBytes = maxBytes() * settings.store.cacheEntries;
-    while (cache.size > settings.store.cacheEntries || cacheBytes > maxCacheBytes) {
+    while (cache.size > settings.store.cacheEntries) {
         const k = cache.keys().next().value;
         if (!k) break;
-        cacheBytes -= cache.get(k)?.byteLength ?? 0;
         cache.delete(k);
     }
-}
-
-function setCache(key: string, bytes: Uint8Array) {
-    const existing = cache.get(key);
-    if (existing) cacheBytes -= existing.byteLength;
-    cache.set(key, bytes);
-    cacheBytes += bytes.byteLength;
-    trimCache();
 }
 
 let pdfjsPromise: Promise<PdfLib> | null = null;
@@ -100,23 +89,20 @@ function loadPdfjs() {
 
 async function loadBytes(att: MessageAttachment) {
     const key = `${att.id}:${att.url}`;
-    let bytes: Uint8Array;
     const hit = cache.get(key);
     if (hit) {
         cache.delete(key);
         cache.set(key, hit);
-        bytes = hit;
-    } else {
-        bytes = await Native.fetchPdf(att.url, maxBytes()) as Uint8Array;
-        if (bytes.byteLength > maxBytes()) throw new Error("PDF exceeds size limit");
-
-        if (settings.store.cacheEntries > 0) {
-            setCache(key, bytes);
-        }
+        return hit;
     }
-    // pdf.js transfers (detaches) the buffer when opening it, so hand it a
-    // fresh copy and keep the cached master intact for the next open.
-    return new Uint8Array(bytes);
+
+    const bytes = await Native.fetchPdf(att.url, maxBytes()) as Uint8Array;
+
+    if (settings.store.cacheEntries > 0) {
+        cache.set(key, bytes);
+        trimCache();
+    }
+    return bytes;
 }
 
 function fmtSize(n: number) {
@@ -277,8 +263,9 @@ function PdfView({ bytes }: { bytes: Uint8Array; }) {
                 const lib = await loadPdfjs();
                 if (cancel) return;
 
+                const data = new Uint8Array(bytes);
                 const d = await lib.getDocument({
-                    data: bytes,
+                    data,
                     isEvalSupported: false,
                     disableAutoFetch: true,
                     disableStream: true,
@@ -460,11 +447,8 @@ function PdfBody({ attachment }: { attachment: MessageAttachment; }) {
     return <PdfView bytes={bytes} />;
 }
 
-const MAX_FILE_SIZE_KEYS = ["maxFileSizeMb"] as const;
-
 function Preview({ attachment }: { attachment: MessageAttachment; }) {
-    const { maxFileSizeMb } = settings.use(MAX_FILE_SIZE_KEYS);
-    const tooLarge = attachment.size > maxFileSizeMb * 1024 * 1024;
+    const tooLarge = attachment.size > maxBytes();
     const [open, setOpen] = useState(false);
 
     return (
@@ -478,14 +462,14 @@ function Preview({ attachment }: { attachment: MessageAttachment; }) {
                     <span className="vc-pdfViewer-fileName" title={attachment.filename}>{attachment.filename}</span>
                     <span className="vc-pdfViewer-fileSize">
                         PDF · {fmtSize(attachment.size)}
-                        {tooLarge && <span className="vc-pdfViewer-fileWarn"> · over {maxFileSizeMb} MB limit</span>}
+                        {tooLarge && <span className="vc-pdfViewer-fileWarn"> · over {settings.store.maxFileSizeMb} MB limit</span>}
                     </span>
                 </div>
 
                 <IconBtn
                     active={open}
                     disabled={tooLarge}
-                    label={tooLarge ? `Preview disabled — over ${maxFileSizeMb} MB` : open ? "Hide preview" : "Preview PDF"}
+                    label={tooLarge ? `Preview disabled — over ${settings.store.maxFileSizeMb} MB` : open ? "Hide preview" : "Preview PDF"}
                     onClick={() => setOpen(o => !o)}
                 >
                     {open ? <EyeClosed /> : <EyeOpen />}
@@ -529,6 +513,5 @@ export default definePlugin({
 
     stop() {
         cache.clear();
-        cacheBytes = 0;
     },
 });

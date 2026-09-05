@@ -6,7 +6,6 @@
 
 import { DataStore, TestcordRequestCoordinator } from "@api/index";
 import { classNameFactory } from "@utils/css";
-import { sleep } from "@utils/misc";
 import { ModalCloseButton, ModalContent, ModalHeader, ModalProps, ModalRoot, ModalSize } from "@utils/modal";
 import type { Channel, Message, User } from "@vencord/discord-types";
 import { findStoreLazy } from "@webpack";
@@ -79,18 +78,12 @@ export function SearchModal({ modalProps }: { modalProps: ModalProps; }) {
     const searchInputRef = useRef<HTMLInputElement>(null);
     const resultsRef = useRef<HTMLDivElement>(null);
     const mediaGridContainerRef = useRef<HTMLDivElement>(null);
-    const searchRunIdRef = useRef(0);
-    const abortRef = useRef<AbortController | null>(null);
     const initialLoadLimit = 50; // Number of results to load initially
     const loadMoreBatchSize = 50; // Number of additional results to load on each scroll
 
     // Focus on the search field on mount
     useEffect(() => {
         searchInputRef.current?.focus();
-        return () => {
-            searchRunIdRef.current++;
-            abortRef.current?.abort();
-        };
     }, []);
 
     // Search with debounce
@@ -104,8 +97,6 @@ export function SearchModal({ modalProps }: { modalProps: ModalProps; }) {
         if (!query.trim()) {
             setAllResults([]);
             setDisplayedResults([]);
-            setLoading(false);
-            setStats({ total: 0, displayed: 0, loading: false });
             return;
         }
 
@@ -169,7 +160,7 @@ export function SearchModal({ modalProps }: { modalProps: ModalProps; }) {
         if (selectedIndex >= 0 && resultsRef.current) {
             const element = resultsRef.current.children[selectedIndex] as HTMLElement;
             if (element) {
-                element.scrollIntoView({ block: "nearest" });
+                element.scrollIntoView({ block: "nearest", behavior: "smooth" });
             }
         }
     }, [selectedIndex, activeFilter]);
@@ -207,7 +198,7 @@ export function SearchModal({ modalProps }: { modalProps: ModalProps; }) {
             }
         };
 
-        container.addEventListener("scroll", handleScroll, { passive: true });
+        container.addEventListener("scroll", handleScroll);
         return () => container.removeEventListener("scroll", handleScroll);
     }, [activeFilter, displayedResults, allResults, loadingMore, loadMoreBatchSize]);
 
@@ -244,23 +235,15 @@ export function SearchModal({ modalProps }: { modalProps: ModalProps; }) {
             }
         };
 
-        container.addEventListener("scroll", handleScroll, { passive: true });
+        container.addEventListener("scroll", handleScroll);
         return () => container.removeEventListener("scroll", handleScroll);
     }, [activeFilter, displayedResults, allResults, loadingMore, loadMoreBatchSize]);
 
     async function performSearch(searchQuery: string, filter: SearchFilter) {
-        abortRef.current?.abort();
-        const controller = new AbortController();
-        abortRef.current = controller;
-        const searchRunId = ++searchRunIdRef.current;
-        const isStale = () => searchRunIdRef.current !== searchRunId || controller.signal.aborted;
-
         // For the MEDIA filter, allow an empty search to load all media
         if (filter !== SearchFilter.MEDIA && !searchQuery.trim()) {
             setAllResults([]);
             setDisplayedResults([]);
-            setLoading(false);
-            setStats({ total: 0, displayed: 0, loading: false });
             return;
         }
 
@@ -301,7 +284,6 @@ export function SearchModal({ modalProps }: { modalProps: ModalProps; }) {
                         if (channelsMatch) {
                             const cachedFinalResults = cached.results.slice(0, settings.store.maxResults || 100);
                             console.log(`[Ultra Advanced Search] Using cache for search: "${searchQuery}" (${cachedFinalResults.length} results)`);
-                            if (isStale()) return;
                             setAllResults(cachedFinalResults);
                             setDisplayedResults(cachedFinalResults);
                             setStats({ total: cachedFinalResults.length, displayed: cachedFinalResults.length, loading: false });
@@ -386,7 +368,7 @@ export function SearchModal({ modalProps }: { modalProps: ModalProps; }) {
                 };
 
                 // Display media from cache immediately
-                if (cachedMediaItems.length > 0 && !isStale()) {
+                if (cachedMediaItems.length > 0) {
                     console.log(`[Ultra Advanced Search] ${cachedMediaItems.length} media loaded from items cache`);
                     const cachedResults = convertCachedItemsToResults(cachedMediaItems);
                     setAllResults(cachedResults);
@@ -401,8 +383,7 @@ export function SearchModal({ modalProps }: { modalProps: ModalProps; }) {
                         const channel = ChannelStore.getChannel(channelId);
                         if (!channel) continue;
 
-                        if (isStale()) return;
-                        const cachedResults = await searchMediaMessages(channelId, searchQuery, true, settings.store.apiRequestDelay || 200, controller.signal); // true = cache only
+                        const cachedResults = await searchMediaMessages(channelId, searchQuery, true, settings.store.apiRequestDelay || 200); // true = cache only
                         searchResults.push(...cachedResults);
                     } catch (error) {
                         console.error(`[Ultra Advanced Search] Error searching cache for ${channelId}:`, error);
@@ -410,7 +391,7 @@ export function SearchModal({ modalProps }: { modalProps: ModalProps; }) {
                 }
 
                 // Update results with new ones (avoid duplicates)
-                if (searchResults.length > 0 && !isStale()) {
+                if (searchResults.length > 0) {
                     searchResults.sort((a, b) => {
                         const timeA = a.message.timestamp?.valueOf() || (a.message as any).timestamp || 0;
                         const timeB = b.message.timestamp?.valueOf() || (b.message as any).timestamp || 0;
@@ -446,15 +427,14 @@ export function SearchModal({ modalProps }: { modalProps: ModalProps; }) {
 
                     // Short delay between batches
                     if (i > 0) {
-                        await sleep(delayBetweenBatches);
+                        await new Promise(resolve => setTimeout(resolve, delayBetweenBatches));
                     }
-                    if (isStale()) return;
 
                     const batchPromises = batch.map(async channelId => {
                         try {
                             const channel = ChannelStore.getChannel(channelId);
                             if (!channel) return [];
-                            return await searchMediaMessages(channelId, searchQuery, false, settings.store.apiRequestDelay || 200, controller.signal); // false = load from API too
+                            return await searchMediaMessages(channelId, searchQuery, false, settings.store.apiRequestDelay || 200); // false = load from API too
                         } catch (error) {
                             console.error(`Error searching channel ${channelId}:`, error);
                             return [];
@@ -462,7 +442,6 @@ export function SearchModal({ modalProps }: { modalProps: ModalProps; }) {
                     });
 
                     const batchResults = await Promise.all(batchPromises);
-                    if (isStale()) return;
                     const newResults: SearchResult[] = [];
                     for (const results of batchResults) {
                         newResults.push(...results);
@@ -515,7 +494,7 @@ export function SearchModal({ modalProps }: { modalProps: ModalProps; }) {
                 const searchPromises = limitedChannelIds.map(async (channelId, index) => {
                     // Small delay to avoid blocking the UI (in batches of 5 channels)
                     if (index > 0 && index % 5 === 0) {
-                        await sleep(10);
+                        await new Promise(resolve => setTimeout(resolve, 10));
                     }
 
                     try {
@@ -538,7 +517,6 @@ export function SearchModal({ modalProps }: { modalProps: ModalProps; }) {
 
                 // Wait for all searches in parallel
                 const allResults = await Promise.all(searchPromises);
-                if (isStale()) return;
 
                 // Flatten and add all results
                 for (const channelResults of allResults) {
@@ -559,8 +537,7 @@ export function SearchModal({ modalProps }: { modalProps: ModalProps; }) {
             const minResults = settings.store.minResultsForAPI ?? 5;
             if (searchResults.length < minResults && limitedChannelIds.length > 0 && filter !== SearchFilter.MEDIA) {
                 console.log(`[Ultra Advanced Search] Local cache: ${searchResults.length} results, searching API...`);
-                const apiResults = await searchWithAPI(searchQuery, filter, limitedChannelIds, searchResults.length, controller.signal);
-                if (isStale()) return;
+                const apiResults = await searchWithAPI(searchQuery, filter, limitedChannelIds, searchResults.length);
 
                 // Add API results (avoiding duplicates)
                 const existingIds = new Set(searchResults.map(r => r.message.id || (r.message as any).message_id));
@@ -580,7 +557,6 @@ export function SearchModal({ modalProps }: { modalProps: ModalProps; }) {
             }
 
             // For the MEDIA filter, use pagination (50 initially)
-            if (isStale()) return;
             if (filter === SearchFilter.MEDIA) {
                 setAllResults(searchResults);
                 setDisplayedResults(searchResults.slice(0, initialLoadLimit));
@@ -614,12 +590,10 @@ export function SearchModal({ modalProps }: { modalProps: ModalProps; }) {
             }
         } catch (error) {
             console.error("Error during search:", error);
-            if (!isStale()) setStats({ total: 0, displayed: 0, loading: false });
+            setStats({ total: 0, displayed: 0, loading: false });
         } finally {
-            if (!isStale()) {
-                setLoading(false);
-                setStats(prev => ({ ...prev, loading: false }));
-            }
+            setLoading(false);
+            setStats(prev => ({ ...prev, loading: false }));
         }
     }
 
@@ -628,15 +602,13 @@ export function SearchModal({ modalProps }: { modalProps: ModalProps; }) {
         searchQuery: string,
         filter: SearchFilter,
         channelIds: string[],
-        currentResultCount: number,
-        signal?: AbortSignal
+        currentResultCount: number
     ): Promise<SearchResult[]> {
         const apiResults: SearchResult[] = [];
         const maxApiChannels = Math.min(10, channelIds.length); // Limit to 10 channels to avoid rate limit
         const delayBetweenRequests = settings.store.apiRequestDelay || 200; // Configurable delay between requests
 
         for (let i = 0; i < maxApiChannels; i++) {
-            if (signal?.aborted) break;
             const channelId = channelIds[i];
             try {
                 const channel = ChannelStore.getChannel(channelId);
@@ -644,7 +616,7 @@ export function SearchModal({ modalProps }: { modalProps: ModalProps; }) {
 
                 // Delay between requests to avoid rate limit
                 if (i > 0) {
-                    await sleep(delayBetweenRequests);
+                    await new Promise(resolve => setTimeout(resolve, delayBetweenRequests));
                 }
 
                 // Load messages from the API (limit of 100 messages per request)
@@ -667,7 +639,7 @@ export function SearchModal({ modalProps }: { modalProps: ModalProps; }) {
                         const retryAfter = parseFloat(error.response?.headers?.["retry-after"] || error.response?.headers?.["Retry-After"] || "1");
                         console.log(`[Ultra Advanced Search] Rate limit reached, waiting ${retryAfter}s...`);
                         // Wait the specified delay before continuing
-                        await sleep(retryAfter * 1000);
+                        await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
                         // Retry once after waiting
                         try {
                             response = await TestcordRequestCoordinator.request({

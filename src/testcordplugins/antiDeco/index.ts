@@ -36,16 +36,6 @@ let lastChannelId: string | null = null;
 let isChannelSwitching = false;
 let switchTimeout: NodeJS.Timeout | null = null;
 let originalSelectVoiceChannel: any = null;
-let isActive = false;
-const reconnectTimeouts = new Set<ReturnType<typeof setTimeout>>();
-
-function scheduleReconnectTimeout(callback: () => void, ms: number) {
-    const timeout = setTimeout(() => {
-        reconnectTimeouts.delete(timeout);
-        if (isActive) callback();
-    }, ms);
-    reconnectTimeouts.add(timeout);
-}
 
 // Function to mark a disconnection as voluntary
 function markVoluntaryDisconnect() {
@@ -126,7 +116,7 @@ export default definePlugin({
                     }
 
                     // Wait a bit to see if a new channel is selected (quick change)
-                    scheduleReconnectTimeout(() => {
+                    setTimeout(() => {
                         // Check again if it's not a voluntary disconnection
                         if (isVoluntaryDisconnect || isChannelSwitching) {
                             console.log(
@@ -152,7 +142,7 @@ export default definePlugin({
                         );
 
                         // Attempt reconnection
-                        scheduleReconnectTimeout(() => {
+                        setTimeout(() => {
                             try {
                                 console.log(
                                     `[AntiDéco] Attempting reconnection to channel ${oldChannelId}`
@@ -200,7 +190,6 @@ export default definePlugin({
     },
 
     start() {
-        isActive = true;
         console.log("[AntiDéco] AntiDisconnection plugin initialized");
 
         // Check that stores are available
@@ -242,7 +231,6 @@ export default definePlugin({
     },
 
     stop() {
-        isActive = false;
         console.log("[AntiDéco] AntiDisconnection plugin stopped");
 
         // Restore the original function
@@ -259,8 +247,6 @@ export default definePlugin({
             clearTimeout(switchTimeout);
             switchTimeout = null;
         }
-        for (const timeout of reconnectTimeouts) clearTimeout(timeout);
-        reconnectTimeouts.clear();
         isVoluntaryDisconnect = false;
         isChannelSwitching = false;
         lastChannelId = null;

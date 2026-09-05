@@ -4,23 +4,19 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-import "./style.css";
-
 import { ApplicationCommandInputType, ApplicationCommandOptionType, findOption, sendBotMessage } from "@api/Commands";
-import { findGroupChildrenByChildId, type NavContextMenuPatchCallback } from "@api/ContextMenu";
+import type { NavContextMenuPatchCallback } from "@api/ContextMenu";
 import { definePluginSettings } from "@api/Settings";
 import ErrorBoundary from "@components/ErrorBoundary";
-import { ImageIcon } from "@components/Icons";
 import { Margins } from "@components/margins";
 import { Notice } from "@components/Notice";
 import { copyWithToast } from "@utils/discord";
 import { Logger } from "@utils/Logger";
-import { classes, parseUrl } from "@utils/misc";
-import { formatDurationVerbose, makeCodeblock } from "@utils/text";
-import definePlugin, { OptionType, type PluginNative } from "@utils/types";
+import { parseUrl } from "@utils/misc";
+import { formatDuration, makeCodeblock } from "@utils/text";
+import definePlugin, { OptionType } from "@utils/types";
 import type { CommandArgument, CommandContext, User } from "@vencord/discord-types";
-import { IconUtils, Menu, SelectedChannelStore, showToast, Toasts } from "@webpack/common";
-import type { ComponentProps } from "react";
+import { IconUtils, Menu } from "@webpack/common";
 
 interface DomainInfo {
     domain: string;
@@ -47,40 +43,19 @@ interface IPInfo {
     zip?: string;
 }
 
-interface GeoLocation {
-    latitude: number;
-    longitude: number;
-    confidence?: number;
-    address?: string;
-    reasoning?: string;
-}
-
-interface GeoAnalysis {
-    locations: GeoLocation[];
-    processingTime?: string;
-    requestsRemaining?: number;
-}
-
 interface MessageContextProps {
-    itemSrc?: string;
     message?: {
         author?: User;
     };
 }
 
-interface ImageContextProps {
-    src?: string;
-}
-
-const Native = VencordNative.pluginHelpers.OSINTToolkit as PluginNative<typeof import("./native")>;
 const REQUEST_TIMEOUT_MS = 12_000;
 const logger = new Logger("OSINTToolkit");
 const activeRequests = new Set<AbortController>();
 let pluginActive = true;
-let nextGeoSeeerApiKey = 0;
 
 const OSINT_TOOLS = [
-    { id: "see-know", name: "See-Know", url: "https://see-know.vip/", description: "Searches public web signals." },
+    { id: "see-know", name: "See-Know", url: "https://see-know.eu/", description: "Searches public web signals." },
     { id: "epieos", name: "Epieos", url: "https://epieos.com/", description: "Checks public email and phone traces." },
     { id: "osintx", name: "Osintx_", url: "https://www.osintx.io/", description: "Collects OSINT links and workflows." },
     { id: "socialeye", name: "SocialEye", url: "https://socialeye.net/", description: "Searches usernames across public sites." },
@@ -92,39 +67,12 @@ const OSINT_TOOLS = [
 ] as const;
 
 const OSINT_RESOURCES = [
-    { id: "osint-catalog", name: "Osint Catalog", url: "https://osint-catalog.xyz/", description: "Catalog of OSINT tools and resources." },
     { id: "pikaosint", name: "PikaOSINT", url: "https://pikaosint.pages.dev/", description: "Curated OSINT tools collection." },
     { id: "osintframework", name: "OSINT Framework", url: "https://osintframework.com/", description: "Categorized OSINT resource index." },
     { id: "photo-osint", name: "Photo OSINT", url: "https://start.me/p/0PgzqO/photo-osint", description: "Photo investigation resource board." }
 ] as const;
 
-const OPSEC_RESOURCES = [
-    { id: "fake-name-generator", name: "Fake Name Generator", url: "https://www.fakenamegenerator.com/", description: "Generates fictional identity details." },
-    { id: "random-user", name: "Random User", url: "https://randomuser.me/", description: "Generates random user profiles." },
-    { id: "this-person-does-not-exist", name: "This Person Does Not Exist", url: "https://thispersondoesnotexist.com/", description: "Generates synthetic profile photos." }
-] as const;
-
-const PRIVACY_BROWSERS = [
-    { id: "waterfox", name: "Waterfox", url: "https://www.waterfox.com/", description: "Privacy-focused Firefox-based browser." },
-    { id: "mullvad", name: "Mullvad Browser", url: "https://mullvad.net/en/download/browser/windows", description: "Privacy browser developed with the Tor Project." },
-    { id: "librewolf", name: "LibreWolf", url: "https://librewolf.net/", description: "Privacy-focused Firefox fork." }
-] as const;
-
-const BREACH_VIP_FIELDS: readonly string[] = [
-    "uuid", "username", "ip", "domain", "discordid", "steamid", "email", "password", "name", "phone"
-];
-
 const settings = definePluginSettings({
-    geoSeeerApiKey: {
-        type: OptionType.STRING,
-        description: "GeoSeeer API keys used for image geolocation. Enter one key per line.",
-        default: "",
-        placeholder: "Enter one GeoSeeer API key per line.",
-        multiline: true,
-        componentProps: {
-            type: "password"
-        }
-    },
     enableLogging: {
         type: OptionType.BOOLEAN,
         description: "Log lookup details while debugging.",
@@ -135,9 +83,8 @@ const settings = definePluginSettings({
 function OSINTToolkitSettingsAbout() {
     return (
         <Notice.Warning className={Margins.bottom8}>
-            <p>Commands: /domain, /iplookup, /myip, /usersearch and /breachvip.</p>
+            <p>Commands: /domain, /iplookup, /myip and /usersearch.</p>
             <p>Right click a message to copy author identifiers, open username searches and browse OSINT resource lists.</p>
-            <p>Right click an image and choose Geo Osint to analyze its likely location privately in your client.</p>
         </Notice.Warning>
     );
 }
@@ -252,13 +199,13 @@ function normalizeUsername(input: string): string {
     return input.trim().replace(/^@+/, "");
 }
 
-async function fetchJson(url: string, init?: RequestInit, timeoutMs = REQUEST_TIMEOUT_MS): Promise<unknown> {
+async function fetchJson(url: string): Promise<unknown> {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     activeRequests.add(controller);
 
     try {
-        const response = await fetch(url, { ...init, signal: controller.signal });
+        const response = await fetch(url, { signal: controller.signal });
 
         if (!response.ok) {
             throw new Error(`Request failed with status ${response.status}`);
@@ -362,7 +309,7 @@ function calculateDomainAge(registrationDate: string): string {
     if (Number.isNaN(timestamp)) return "Unknown";
 
     const days = Math.max(0, Math.floor((Date.now() - timestamp) / 86_400_000));
-    return formatDurationVerbose(days, "days", true);
+    return formatDuration(days, "days", true);
 }
 
 function formatDate(value?: string): string {
@@ -436,88 +383,6 @@ function createUserSearchMessage(username: string): string {
     ].join("\n"), "txt");
 }
 
-function createBreachVipMessage(results: unknown[], total: number): string {
-    if (!total) return makeCodeblock("[BREACH.VIP]\nNo matching records found.", "txt");
-
-    const lines = ["[BREACH.VIP]", `Results: ${total}`, ""];
-    let shown = 0;
-
-    for (const result of results.slice(0, 10)) {
-        const serialized = JSON.stringify(result) ?? String(result);
-        const line = `${shown + 1}. ${serialized.slice(0, 600)}${serialized.length > 600 ? "..." : ""}`;
-        if (lines.join("\n").length + line.length > 1_750) break;
-
-        lines.push(line);
-        shown++;
-    }
-
-    if (shown < total) lines.push("", `Showing ${shown} of ${total} results.`);
-    return makeCodeblock(lines.join("\n"), "json");
-}
-
-function parseGeoAnalysis(data: unknown): GeoAnalysis | undefined {
-    if (!isRecord(data) || data.status !== "success" || !Array.isArray(data.locations)) return;
-
-    const locations = data.locations.flatMap(location => {
-        if (!isRecord(location)) return [];
-
-        const latitude = getNumber(location, "latitude");
-        const longitude = getNumber(location, "longitude");
-        if (latitude === undefined || longitude === undefined) return [];
-
-        return [{
-            latitude,
-            longitude,
-            confidence: getNumber(location, "confidence"),
-            address: getString(location, "address"),
-            reasoning: getString(location, "reasoning")
-        }];
-    });
-
-    return {
-        locations,
-        processingTime: getString(data, "processing_time"),
-        requestsRemaining: getNumber(data, "API_Requests_remaining")
-    };
-}
-
-async function analyzeGeoImage(imageUrl: string, apiKeys: string[]): Promise<GeoAnalysis | undefined> {
-    const firstKey = nextGeoSeeerApiKey % apiKeys.length;
-    nextGeoSeeerApiKey = (firstKey + 1) % apiKeys.length;
-
-    for (let offset = 0; offset < apiKeys.length; offset++) {
-        const result = await Native.analyzeGeoImage(imageUrl, apiKeys[(firstKey + offset) % apiKeys.length]);
-        if (result.success) return parseGeoAnalysis(result.data);
-        if (!result.retryable || offset === apiKeys.length - 1) throw new Error(result.error);
-    }
-
-    return undefined;
-}
-
-function createGeoAnalysisMessage(analysis: GeoAnalysis): string {
-    const lines = ["[GEO OSINT]"];
-
-    if (!analysis.locations.length) {
-        lines.push("No likely locations found.");
-    } else {
-        analysis.locations.slice(0, 3).forEach((location, index) => {
-            lines.push(
-                "",
-                `Candidate ${index + 1}`,
-                `Address     : ${location.address ?? "Unknown"}`,
-                `Coordinates : ${location.latitude}, ${location.longitude}`,
-                `Confidence  : ${location.confidence === undefined ? "Unknown" : `${Math.round(location.confidence * 100)}%`}`,
-                `Reasoning   : ${location.reasoning?.replace(/\s+/g, " ").slice(0, 400) ?? "Not provided"}`
-            );
-        });
-    }
-
-    if (analysis.processingTime) lines.push("", `Processing time    : ${analysis.processingTime}`);
-    if (analysis.requestsRemaining !== undefined) lines.push(`Requests remaining : ${analysis.requestsRemaining}`);
-
-    return makeCodeblock(lines.join("\n"), "txt");
-}
-
 function getDiscordUserUrl(user: User): string {
     return `https://discord.com/users/${encodeURIComponent(user.id)}`;
 }
@@ -530,16 +395,12 @@ function openExternal(url: string) {
     VencordNative.native.openExternal(url);
 }
 
-function GeoImageIcon(props: ComponentProps<typeof ImageIcon>) {
-    return <ImageIcon {...props} className={classes(props.className, "vc-osint-geo-icon")} />;
-}
-
 function abortActiveRequests() {
     activeRequests.forEach(controller => controller.abort());
     activeRequests.clear();
 }
 
-const messageContextMenuPatch: NavContextMenuPatchCallback = (children, { itemSrc, message }: MessageContextProps) => {
+const messageContextMenuPatch: NavContextMenuPatchCallback = (children, { message }: MessageContextProps) => {
     const author = message?.author;
     if (!author || children.find(child => child?.props?.id === "vc-osint-toolkit-group")) return;
 
@@ -549,17 +410,7 @@ const messageContextMenuPatch: NavContextMenuPatchCallback = (children, { itemSr
 
     children.push(
         <Menu.MenuGroup id="vc-osint-toolkit-group">
-            {itemSrc
-                ? (
-                    <Menu.MenuItem
-                        id="vc-osint-geo"
-                        label={<span className="vc-osint-geo-label">Geo Osint</span>}
-                        action={() => void handleGeoImage(itemSrc)}
-                        icon={GeoImageIcon}
-                    />
-                )
-                : null}
-            <Menu.MenuItem id="vc-osint-toolkit" label={<span className="vc-osint-toolkit-label">OSINT Toolkit</span>}>
+            <Menu.MenuItem id="vc-osint-toolkit" label="OSINT Toolkit">
                 <Menu.MenuItem id="vc-osint-author" label="Message Author">
                     <Menu.MenuItem
                         id="vc-osint-copy-user-id"
@@ -618,82 +469,8 @@ const messageContextMenuPatch: NavContextMenuPatchCallback = (children, { itemSr
                         />
                     ))}
                 </Menu.MenuItem>
-                <Menu.MenuItem id="vc-osint-opsec" label="Opsec">
-                    {OPSEC_RESOURCES.map(resource => (
-                        <Menu.MenuItem
-                            key={`vc-osint-opsec-${resource.id}`}
-                            id={`vc-osint-opsec-${resource.id}`}
-                            label={resource.name}
-                            hint={resource.description}
-                            action={() => openExternal(resource.url)}
-                        />
-                    ))}
-                </Menu.MenuItem>
-                <Menu.MenuItem id="vc-osint-privacy-browsers" label="Privacy Browsers">
-                    {PRIVACY_BROWSERS.map(browser => (
-                        <Menu.MenuItem
-                            key={`vc-osint-browser-${browser.id}`}
-                            id={`vc-osint-browser-${browser.id}`}
-                            label={browser.name}
-                            hint={browser.description}
-                            action={() => openExternal(browser.url)}
-                        />
-                    ))}
-                </Menu.MenuItem>
             </Menu.MenuItem>
         </Menu.MenuGroup>
-    );
-};
-
-async function handleGeoImage(imageUrl: string) {
-    const apiKeys = [...new Set(settings.store.geoSeeerApiKey.split(/\r?\n/).map(key => key.trim()).filter(Boolean))];
-    if (!apiKeys.length) {
-        sendBotMessage(SelectedChannelStore.getChannelId(), {
-            content: "Your GeoSeeer API keys are missing. Get them from [GeoSeeer](https://geoseeer.com/). We recommend creating the accounts with temporary emails. For a reliable temporary email, right click any message, then select OSINT Toolkit > Lookup Tools > Snapmail."
-        });
-        return;
-    }
-
-    const parsedUrl = parseUrl(imageUrl);
-    if (!parsedUrl || (parsedUrl.protocol !== "https:" && parsedUrl.protocol !== "http:")) {
-        showToast("This image does not have a public URL that GeoSeeer can analyze.", Toasts.Type.FAILURE);
-        return;
-    }
-
-    const channelId = SelectedChannelStore.getChannelId();
-    showToast("Geo Osint analysis started.", Toasts.Type.MESSAGE);
-    debug("Starting Geo Osint analysis");
-
-    try {
-        const analysis = await analyzeGeoImage(parsedUrl.href, apiKeys);
-        if (!pluginActive) return;
-
-        sendBotMessage(channelId, {
-            content: analysis
-                ? createGeoAnalysisMessage(analysis)
-                : "GeoSeeer returned an invalid response."
-        });
-    } catch (error) {
-        if (!pluginActive) return;
-
-        debug("Geo Osint analysis failed", error);
-        sendBotMessage(channelId, { content: "Could not complete the Geo Osint analysis." });
-    }
-}
-
-const imageContextMenuPatch: NavContextMenuPatchCallback = (children, { src }: ImageContextProps) => {
-    if (!src) return;
-
-    const group = findGroupChildrenByChildId("copy-native-link", children) ?? children;
-    if (group.find(child => child?.props?.id === "vc-osint-geo")) return;
-
-    group.push(
-        <Menu.MenuItem
-            id="vc-osint-geo"
-            label={<span className="vc-osint-geo-label">Geo Osint</span>}
-            action={() => void handleGeoImage(src)}
-            icon={GeoImageIcon}
-        />
     );
 };
 
@@ -706,8 +483,7 @@ export default definePlugin({
     settingsAboutComponent: SafeOSINTToolkitSettingsAbout,
 
     contextMenus: {
-        message: messageContextMenuPatch,
-        "image-context": imageContextMenuPatch
+        message: messageContextMenuPatch
     },
 
     start() {
@@ -836,77 +612,6 @@ export default definePlugin({
 
                 debug("Generating username search links", username);
                 sendBotMessage(ctx.channel.id, { content: createUserSearchMessage(username) });
-            }
-        },
-        {
-            name: "breachvip",
-            description: "Searches Breach.vip records by one or more fields.",
-            inputType: ApplicationCommandInputType.BUILT_IN,
-            options: [
-                {
-                    name: "term",
-                    description: "Search term between 1 and 100 characters.",
-                    type: ApplicationCommandOptionType.STRING,
-                    required: true
-                },
-                {
-                    name: "fields",
-                    description: "Comma-separated fields, like email,username or discordid.",
-                    type: ApplicationCommandOptionType.STRING,
-                    required: true
-                },
-                {
-                    name: "minecraft",
-                    description: "Only searches records in the Minecraft category.",
-                    type: ApplicationCommandOptionType.BOOLEAN
-                },
-                {
-                    name: "wildcard",
-                    description: "Enables * and ? wildcard operators.",
-                    type: ApplicationCommandOptionType.BOOLEAN
-                },
-                {
-                    name: "case_sensitive",
-                    description: "Makes the search case-sensitive.",
-                    type: ApplicationCommandOptionType.BOOLEAN
-                }
-            ],
-            execute: async (args: CommandArgument[], ctx: CommandContext) => {
-                const term = findOption<string>(args, "term", "").trim();
-                const fields = [...new Set(findOption<string>(args, "fields", "")
-                    .toLowerCase()
-                    .split(",")
-                    .map(field => field.trim())
-                    .filter(Boolean))];
-                const minecraft = findOption<boolean>(args, "minecraft", false);
-                const wildcard = findOption<boolean>(args, "wildcard", false);
-                const caseSensitive = findOption<boolean>(args, "case_sensitive", false);
-
-                if (!term || term.length > 100) {
-                    sendBotMessage(ctx.channel.id, { content: "The search term must contain between 1 and 100 characters." });
-                    return;
-                }
-
-                const invalidFields = fields.filter(field => !BREACH_VIP_FIELDS.includes(field));
-                if (!fields.length || fields.length > 10 || invalidFields.length) {
-                    sendBotMessage(ctx.channel.id, {
-                        content: `Invalid fields. Choose up to 10 comma-separated values from: ${BREACH_VIP_FIELDS.join(", ")}.`
-                    });
-                    return;
-                }
-
-                if (wildcard && (term.startsWith("*") || term.startsWith("?"))) {
-                    sendBotMessage(ctx.channel.id, { content: "Wildcard searches cannot begin with * or ?." });
-                    return;
-                }
-
-                debug("Searching Breach.vip", { fields, minecraft, wildcard, caseSensitive });
-                const result = await Native.searchBreachVip(term, fields, minecraft, wildcard, caseSensitive);
-                if (!pluginActive) return;
-
-                sendBotMessage(ctx.channel.id, {
-                    content: result.success ? createBreachVipMessage(result.results, result.total) : result.error
-                });
             }
         }
     ],

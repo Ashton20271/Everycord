@@ -198,7 +198,7 @@ export default definePlugin({
     settings,
 
     chatBarButton: {
-        icon: () => (streamProofActive ? <EyeSlashIcon /> : <EyeIcon />),
+        icon: EyeSlashIcon as any,
         render: StreamProofButton,
     },
 

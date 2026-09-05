@@ -51,24 +51,10 @@ interface TimerEntry {
 
 const activeTimers = new Map<string, TimerEntry>();
 const timerListeners = new Set<() => void>();
-let listenerInterval: ReturnType<typeof setInterval> | null = null;
 
 function notifyListeners() {
     for (const fn of timerListeners) {
         try { fn(); } catch { }
-    }
-}
-
-function addTimerListener(listener: () => void) {
-    timerListeners.add(listener);
-    if (!listenerInterval) listenerInterval = setInterval(notifyListeners, 1000);
-}
-
-function removeTimerListener(listener: () => void) {
-    timerListeners.delete(listener);
-    if (timerListeners.size === 0 && listenerInterval) {
-        clearInterval(listenerInterval);
-        listenerInterval = null;
     }
 }
 
@@ -104,10 +90,6 @@ function cleanup() {
     }
     activeTimers.clear();
     timerListeners.clear();
-    if (listenerInterval) {
-        clearInterval(listenerInterval);
-        listenerInterval = null;
-    }
 }
 
 function TimerBadge({ messageId }: { messageId: string; }) {
@@ -125,11 +107,14 @@ function TimerBadge({ messageId }: { messageId: string; }) {
         }
 
         update();
+        const interval = setInterval(update, 1000);
+
         const listener = () => update();
-        addTimerListener(listener);
+        timerListeners.add(listener);
 
         return () => {
-            removeTimerListener(listener);
+            clearInterval(interval);
+            timerListeners.delete(listener);
         };
     }, [messageId]);
 

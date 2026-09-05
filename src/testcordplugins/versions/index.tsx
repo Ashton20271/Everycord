@@ -15,7 +15,20 @@ export default definePlugin({
     tags: ["Utility", "Developers"],
     authors: [TestcordDevs.x2b],
 
-    patches: [],
+    patches: [
+        {
+            find: ".versionHash",
+            replacement: [
+                {
+                    match: /\[\(0,.{1,3}\.jsxs?\)\((.{1,10}),(\{[^{}}]+\{.{0,20}.versionHash,.+?\})\)," "/,
+                    replace: (m, component, props) => {
+                        props = props.replace(/children:\[.+\]/, "");
+                        return `${m},Vencord.Plugins.plugins.Versions.makeInfoElements(${component}, ${props})`;
+                    }
+                }
+            ]
+        }
+    ],
 
     makeInfoElements(Component: React.ComponentType<React.PropsWithChildren>, props: React.PropsWithChildren) {
         const versions = VencordNative.native.getVersions();

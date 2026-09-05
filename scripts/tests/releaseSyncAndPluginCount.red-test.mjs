@@ -79,7 +79,7 @@ function extractWorkflowJob(yaml, jobName) {
     return lines.slice(startIndex, endIndex === -1 ? undefined : endIndex).join("\n");
 }
 
-const everycordInstallerAssets = {
+const opencordInstallerAssets = {
     windowsGui: "OpenCordInstaller.exe",
     windowsCli: "OpenCordInstallerCli.exe",
     linuxGui: "OpenCord-x11",
@@ -133,8 +133,8 @@ check("README Windows GUI installer link is OpenCord-branded", () => {
     if (/Equilotl\.exe/i.test(readme)) {
         return fail("README still links to legacy Equilotl.exe installer");
     }
-    if (!readme.includes(`releases/latest/download/${everycordInstallerAssets.windowsGui}`)) {
-        return fail(`README does not link to ${everycordInstallerAssets.windowsGui}`);
+    if (!readme.includes(`releases/latest/download/${opencordInstallerAssets.windowsGui}`)) {
+        return fail(`README does not link to ${opencordInstallerAssets.windowsGui}`);
     }
     return pass();
 });
@@ -143,8 +143,8 @@ check("README Windows CLI installer link is OpenCord-branded", () => {
     if (/EquilotlCli\.exe/i.test(readme)) {
         return fail("README still links to legacy EquilotlCli.exe installer");
     }
-    if (!readme.includes(`releases/latest/download/${everycordInstallerAssets.windowsCli}`)) {
-        return fail(`README does not link to ${everycordInstallerAssets.windowsCli}`);
+    if (!readme.includes(`releases/latest/download/${opencordInstallerAssets.windowsCli}`)) {
+        return fail(`README does not link to ${opencordInstallerAssets.windowsCli}`);
     }
     return pass();
 });
@@ -153,8 +153,8 @@ check("README macOS x64 installer link is OpenCord-branded", () => {
     if (/Equilotl-darwin-x64\.zip/i.test(readme)) {
         return fail("README still links to legacy Equilotl-darwin-x64.zip installer");
     }
-    if (!readme.includes(`releases/latest/download/${everycordInstallerAssets.darwinX64Zip}`)) {
-        return fail(`README does not link to ${everycordInstallerAssets.darwinX64Zip}`);
+    if (!readme.includes(`releases/latest/download/${opencordInstallerAssets.darwinX64Zip}`)) {
+        return fail(`README does not link to ${opencordInstallerAssets.darwinX64Zip}`);
     }
     return pass();
 });
@@ -163,8 +163,8 @@ check("README macOS arm64 installer link is OpenCord-branded", () => {
     if (/Equilotl-darwin-arm64\.zip/i.test(readme)) {
         return fail("README still links to legacy Equilotl-darwin-arm64.zip installer");
     }
-    if (!readme.includes(`releases/latest/download/${everycordInstallerAssets.darwinArm64Zip}`)) {
-        return fail(`README does not link to ${everycordInstallerAssets.darwinArm64Zip}`);
+    if (!readme.includes(`releases/latest/download/${opencordInstallerAssets.darwinArm64Zip}`)) {
+        return fail(`README does not link to ${opencordInstallerAssets.darwinArm64Zip}`);
     }
     return pass();
 });
@@ -173,8 +173,8 @@ check("README Linux GUI installer link is OpenCord-branded", () => {
     if (/Equilotl-x11/i.test(readme)) {
         return fail("README still links to legacy Equilotl-x11 installer");
     }
-    if (!readme.includes(`releases/latest/download/${everycordInstallerAssets.linuxGui}`)) {
-        return fail(`README does not link to ${everycordInstallerAssets.linuxGui}`);
+    if (!readme.includes(`releases/latest/download/${opencordInstallerAssets.linuxGui}`)) {
+        return fail(`README does not link to ${opencordInstallerAssets.linuxGui}`);
     }
     return pass();
 });
@@ -183,8 +183,8 @@ check("README Linux CLI installer link is OpenCord-branded", () => {
     if (/EquilotlCli-linux/i.test(readme)) {
         return fail("README still links to legacy EquilotlCli-linux installer");
     }
-    if (!readme.includes(`releases/latest/download/${everycordInstallerAssets.linuxCli}`)) {
-        return fail(`README does not link to ${everycordInstallerAssets.linuxCli}`);
+    if (!readme.includes(`releases/latest/download/${opencordInstallerAssets.linuxCli}`)) {
+        return fail(`README does not link to ${opencordInstallerAssets.linuxCli}`);
     }
     return pass();
 });
@@ -213,8 +213,8 @@ check("misc/install.sh uses OpenCord-branded installer asset name", () => {
     if (/Equilotl/i.test(installSh)) {
         return fail("install.sh still references legacy Equilotl names");
     }
-    if (!installSh.includes(everycordInstallerAssets.linuxCli)) {
-        return fail(`install.sh does not reference ${everycordInstallerAssets.linuxCli}`);
+    if (!installSh.includes(opencordInstallerAssets.linuxCli)) {
+        return fail(`install.sh does not reference ${opencordInstallerAssets.linuxCli}`);
     }
     return pass();
 });
@@ -225,10 +225,10 @@ check("scripts/runInstaller.mjs uses OpenCord-branded installer asset names", ()
     }
 
     for (const [label, assetName] of Object.entries({
-        "Windows CLI": everycordInstallerAssets.windowsCli,
-        "Linux CLI": everycordInstallerAssets.linuxCli,
-        "macOS x64 zip": everycordInstallerAssets.darwinX64Zip,
-        "macOS arm64 zip": everycordInstallerAssets.darwinArm64Zip,
+        "Windows CLI": opencordInstallerAssets.windowsCli,
+        "Linux CLI": opencordInstallerAssets.linuxCli,
+        "macOS x64 zip": opencordInstallerAssets.darwinX64Zip,
+        "macOS arm64 zip": opencordInstallerAssets.darwinArm64Zip,
     })) {
         if (!runInstaller.includes(assetName)) {
             return fail(`scripts/runInstaller.mjs does not reference ${label} asset ${assetName}`);
@@ -265,7 +265,7 @@ check("scripts/patchEquilotlBranding.mjs renames installer environment variables
 });
 
 check("scripts/patchEquilotlBranding.mjs renames on-disk Equicord paths to OpenCord", () => {
-    if (/"equicord\.asar":\s*"everycord\.asar"/.test(patchBranding)
+    if (/"equicord\.asar":\s*"opencord\.asar"/.test(patchBranding)
         && /'appdir\.New\("Equicord"\)':\s*'appdir\.New\("OpenCord"\)'/.test(patchBranding)
         && /"EquicordData":\s*"OpenCordData"/.test(patchBranding)) {
         return pass();
@@ -312,8 +312,8 @@ check("CI Windows build outputs OpenCord-branded installer executables", () => {
     if (/Equilotl\.exe/i.test(windowsJob) || /EquilotlCli\.exe/i.test(windowsJob)) {
         return fail("Windows job still produces Equilotl.exe / EquilotlCli.exe");
     }
-    if (!windowsJob.includes(everycordInstallerAssets.windowsGui) || !windowsJob.includes(everycordInstallerAssets.windowsCli)) {
-        return fail(`Windows job must build ${everycordInstallerAssets.windowsGui} and ${everycordInstallerAssets.windowsCli}`);
+    if (!windowsJob.includes(opencordInstallerAssets.windowsGui) || !windowsJob.includes(opencordInstallerAssets.windowsCli)) {
+        return fail(`Windows job must build ${opencordInstallerAssets.windowsGui} and ${opencordInstallerAssets.windowsCli}`);
     }
 
     return pass();
@@ -328,8 +328,8 @@ check("CI Linux build outputs OpenCord-branded installer binaries", () => {
     if (/Equilotl-x11/i.test(linuxJob) || /EquilotlCli-linux/i.test(linuxJob)) {
         return fail("Linux job still produces Equilotl-x11 / EquilotlCli-linux");
     }
-    if (!linuxJob.includes(everycordInstallerAssets.linuxGui) || !linuxJob.includes(everycordInstallerAssets.linuxCli)) {
-        return fail(`Linux job must build ${everycordInstallerAssets.linuxGui} and ${everycordInstallerAssets.linuxCli}`);
+    if (!linuxJob.includes(opencordInstallerAssets.linuxGui) || !linuxJob.includes(opencordInstallerAssets.linuxCli)) {
+        return fail(`Linux job must build ${opencordInstallerAssets.linuxGui} and ${opencordInstallerAssets.linuxCli}`);
     }
 
     return pass();
@@ -350,10 +350,10 @@ check("CI macOS build outputs OpenCord-branded installer archives and CLI binari
     }
 
     for (const assetName of [
-        everycordInstallerAssets.darwinX64Zip,
-        everycordInstallerAssets.darwinArm64Zip,
-        everycordInstallerAssets.darwinX64Cli,
-        everycordInstallerAssets.darwinArm64Cli,
+        opencordInstallerAssets.darwinX64Zip,
+        opencordInstallerAssets.darwinArm64Zip,
+        opencordInstallerAssets.darwinX64Cli,
+        opencordInstallerAssets.darwinArm64Cli,
     ]) {
         if (!macJob.includes(assetName)) {
             return fail(`macOS job must build ${assetName}`);

@@ -62,8 +62,8 @@
             "@equicordplugins/*": [
                 "./src/equicordplugins/*"
             ],
-            "@everycordplugins/*": [
-                "./src/everycordplugins/*"
+            "@opencordplugins/*": [
+                "./src/opencordplugins/*"
             ],
             "@illegalcordplugins/*": [
                 "./src/illegalcordplugins/*"

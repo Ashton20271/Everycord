@@ -19,7 +19,7 @@ export default definePlugin({
 
     patches: [
         {
-            find: "#{intl::USER_PROFILE_ACCOUNT_POPOUT_BUTTON_A11Y_LABEL}",
+            find: ".DISPLAY_NAME_STYLES_COACHMARK)",
             replacement: [
                 {
                     match: /children:\[(?=.{0,50}accountContainerRef:\i)/,

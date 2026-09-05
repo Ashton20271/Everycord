@@ -23,9 +23,7 @@ import {
     Select,
     Text,
     TextInput,
-    useEffect,
     useMemo,
-    useRef,
     UserStore,
     useState,
 } from "@webpack/common";
@@ -65,8 +63,6 @@ function CopyModal({ modalProps, guild }: { modalProps: ModalProps; guild: AnyGu
         "defaultIncludeServerSettings",
         "defaultIncludeOwnNickname",
         "defaultIncludeBots",
-        "emojiCount",
-        "stickerCount",
     ]);
 
     const [incRoles, setIncRoles] = useState(s.defaultIncludeRoles);
@@ -87,14 +83,6 @@ function CopyModal({ modalProps, guild }: { modalProps: ModalProps; guild: AnyGu
 
     const [running, setRunning] = useState(false);
     const [log, setLog] = useState<string[]>([]);
-    const abortRef = useRef<AbortController | null>(null);
-
-    useEffect(() => () => abortRef.current?.abort(), []);
-
-    function closeModal() {
-        abortRef.current?.abort();
-        modalProps.onClose();
-    }
 
     const anyWipe = wipeRoles || wipeChannels || wipeEmojis || wipeStickers;
     const needsConfirm = targetMode === "existing" && anyWipe;
@@ -110,9 +98,6 @@ function CopyModal({ modalProps, guild }: { modalProps: ModalProps; guild: AnyGu
     const append = (line: string) => setLog(prev => [...prev, line]);
 
     async function handleRun() {
-        abortRef.current?.abort();
-        const controller = new AbortController();
-        abortRef.current = controller;
         setRunning(true);
         setLog([]);
         const opts: CopyOptions = {
@@ -137,20 +122,15 @@ function CopyModal({ modalProps, guild }: { modalProps: ModalProps; guild: AnyGu
                 emojis: wipeEmojis,
                 stickers: wipeStickers,
             },
-            limits: {
-                emojis: s.emojiCount,
-                stickers: s.stickerCount,
-            },
-            signal: controller.signal,
             onLog: append,
         };
         try {
             await runCopy(opts);
-            if (!controller.signal.aborted) append("✓ Done.");
+            append("✓ Done.");
         } catch (e: any) {
-            if (!controller.signal.aborted) append(`✗ Failed: ${e?.message ?? String(e)}`);
+            append(`✗ Failed: ${e?.message ?? String(e)}`);
         } finally {
-            if (!controller.signal.aborted) setRunning(false);
+            setRunning(false);
         }
     }
 
@@ -160,7 +140,7 @@ function CopyModal({ modalProps, guild }: { modalProps: ModalProps; guild: AnyGu
                 <Forms.FormTitle tag="h2" style={{ marginBottom: 0 }}>
                     Duplicate Server — {guild.name}
                 </Forms.FormTitle>
-                <ModalCloseButton onClick={closeModal} />
+                <ModalCloseButton onClick={modalProps.onClose} />
             </ModalHeader>
 
             <ModalContent className="guild-toolkit-content">
@@ -264,7 +244,7 @@ function CopyModal({ modalProps, guild }: { modalProps: ModalProps; guild: AnyGu
                     <Button
                         color={Button.Colors.PRIMARY}
                         look={Button.Looks.LINK}
-                        onClick={closeModal}
+                        onClick={modalProps.onClose}
                         disabled={running}
                     >
                         {running ? "Running…" : "Close"}

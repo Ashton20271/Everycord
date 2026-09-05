@@ -94,16 +94,21 @@ const UserContextMenuPatch: NavContextMenuPatchCallback = (
     { channel, user }: UserContextProps
 ) => {
     if (UserStore.getCurrentUser().id === user.id) return;
-    const isLeashed = leashedUserInfo?.userId === user.id;
+
+    const [checked, setChecked] = React.useState(
+        leashedUserInfo?.userId === user.id
+    );
+
     children.push(
         <Menu.MenuSeparator />,
         <Menu.MenuCheckboxItem
             id="laisse-leash-user"
             label="Leash - Hook the user"
-            checked={isLeashed}
+            checked={checked}
             action={() => {
                 if (leashedUserInfo?.userId === user.id) {
                     leashedUserInfo = null;
+                    setChecked(false);
                     showNotification({
                         title: "Leash",
                         body: `User ${user.username} is no longer hooked`,
@@ -115,6 +120,7 @@ const UserContextMenuPatch: NavContextMenuPatchCallback = (
                     userId: user.id,
                     lastChannelId: null,
                 };
+                setChecked(true);
                 showNotification({
                     title: "Leash",
                     body: `User ${user.username} is now hooked to you`,

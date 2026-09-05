@@ -65,7 +65,7 @@ if (!IS_VANILLA && !IS_EXTENSION) {
         };
 
         protocol.handle("vencord", handleProtocol("vencord"));
-        protocol.handle("everycord", handleProtocol("everycord"));
+        protocol.handle("opencord", handleProtocol("opencord"));
         protocol.handle("equicord", handleProtocol("equicord"));
 
         try {

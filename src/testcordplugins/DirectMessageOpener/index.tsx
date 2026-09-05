@@ -33,7 +33,7 @@ const UserIcon = (props: any) => (
         />
     </svg>
 );
-const HeaderBarIcon = findComponentByCodeLazy(".HEADER_BAR_BADGE_TOP:", '"top"===c');
+const HeaderBarIcon = findComponentByCodeLazy(".HEADER_BAR_BADGE_TOP:", '.iconBadge,"top"');
 
 function getErrorMessage(err: any): string {
     const code = err?.body?.code;
@@ -145,8 +145,7 @@ function ToolBarHeader() {
             <HeaderBarIcon
                 tooltip="Open DM by User ID"
                 position="bottom"
-                className="vc-plugin-icon-button vc-dm-opener"
-                iconClassName="vc-plugin-icon-button"
+                className="vc-dm-opener"
                 icon={UserIcon}
                 onClick={openDirectMessageModal}
             />

@@ -6,7 +6,6 @@
 
 import { definePluginSettings } from "@api/Settings";
 import { TestcordDevs } from "@utils/constants";
-import { sleep } from "@utils/misc";
 import definePlugin, { OptionType } from "@utils/types";
 import { findByPropsLazy, findStoreLazy } from "@webpack";
 import { Menu, RestAPI, SelectedChannelStore, Toasts, UserStore } from "@webpack/common";
@@ -84,7 +83,7 @@ const settings = definePluginSettings({
 
 async function addCooldown() {
     isHandlingAction = true;
-    await sleep(settings.store.cooldown * 1000);
+    await new Promise(resolve => setTimeout(resolve, settings.store.cooldown * 1000));
     isHandlingAction = false;
 }
 

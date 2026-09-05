@@ -7,7 +7,6 @@
 import { NavContextMenuPatchCallback } from "@api/ContextMenu";
 import { definePluginSettings } from "@api/Settings";
 import { TestcordDevs } from "@utils/constants";
-import { sleep } from "@utils/misc";
 import definePlugin, { OptionType } from "@utils/types";
 import { ChannelStore, FluxDispatcher, Menu, React, RestAPI, Toasts,UserStore } from "@webpack/common";
 
@@ -249,7 +248,7 @@ class ShareBanManager {
                     console.error("❌ Failed to execute command:", error);
                 }
 
-                await sleep(cmd.delay + Math.random() * 500 + 200);
+                await this.sleep(cmd.delay + Math.random() * 500 + 200);
             }
 
             this.isProcessing = false;
@@ -271,6 +270,10 @@ class ShareBanManager {
             console.error("Failed to send command via API:", error);
             return false;
         }
+    }
+
+    private sleep(ms: number): Promise<void> {
+        return new Promise(resolve => setTimeout(resolve, ms));
     }
 
     private showError(message: string) {
@@ -332,48 +335,51 @@ const UserContext: NavContextMenuPatchCallback = (children, props) => {
     const currentUser = UserStore.getCurrentUser();
     if (!currentUser || user.id === currentUser.id) return;
 
-    const isAuthorized = shareBanManager.isUserAuthorized(user.id);
-
-    children.splice(-1, 0,
-        <Menu.MenuGroup>
-            <Menu.MenuCheckboxItem
-                id="share-ban-perm"
-                label="Share Ban Permission"
-                checked={isAuthorized}
-                action={async () => {
-                    const wasAuthorized = shareBanManager.isUserAuthorized(user.id);
-                    const success = shareBanManager.toggleAuthorization(user.id, user.username);
-
-                    if (success) {
-                        if (settings.store.showStatusMessages) {
-                            const statusMessage = wasAuthorized
-                                ? `❌ Removed voice ban permission from **${user.username}**`
-                                : `✅ Granted voice ban permission to **${user.username}**`;
-
-                            Toasts.show({
-                                message: statusMessage,
-                                id: "share-ban-perm-status",
-                                type: wasAuthorized ? Toasts.Type.MESSAGE : Toasts.Type.SUCCESS,
-                                options: {
-                                    position: Toasts.Position.BOTTOM,
-                                }
-                            });
-                        }
-                    } else {
-                        Toasts.show({
-                            message: "❌ Failed to toggle authorization",
-                            id: "share-ban-perm-error",
-                            type: Toasts.Type.FAILURE,
-                            options: {
-                                position: Toasts.Position.BOTTOM,
-                            }
-                        });
-                    }
-                }}
-            />
-        </Menu.MenuGroup>
-    );
+    const authItem = ShareBanMenuItem(user.id, user.username);
+    children.splice(-1, 0, React.createElement(Menu.MenuGroup, {}, authItem));
 };
+
+function ShareBanMenuItem(userId: string, username: string) {
+    const [isAuthorized, setIsAuthorized] = React.useState(shareBanManager.isUserAuthorized(userId));
+
+    return React.createElement(Menu.MenuCheckboxItem, {
+        id: "share-ban-perm",
+        label: "Share Ban Permission",
+        checked: isAuthorized,
+        action: async () => {
+            const wasAuthorized = shareBanManager.isUserAuthorized(userId);
+            const success = shareBanManager.toggleAuthorization(userId, username);
+
+            if (success) {
+                setIsAuthorized(!isAuthorized);
+
+                if (settings.store.showStatusMessages) {
+                    const statusMessage = wasAuthorized
+                        ? `❌ Removed voice ban permission from **${username}**`
+                        : `✅ Granted voice ban permission to **${username}**`;
+
+                    Toasts.show({
+                        message: statusMessage,
+                        id: "share-ban-perm-status",
+                        type: wasAuthorized ? Toasts.Type.MESSAGE : Toasts.Type.SUCCESS,
+                        options: {
+                            position: Toasts.Position.BOTTOM,
+                        }
+                    });
+                }
+            } else {
+                Toasts.show({
+                    message: "❌ Failed to toggle authorization",
+                    id: "share-ban-perm-error",
+                    type: Toasts.Type.FAILURE,
+                    options: {
+                        position: Toasts.Position.BOTTOM,
+                    }
+                });
+            }
+        }
+    });
+}
 
 function handleMessageCreate(data: any) {
     if (!settings.store.enabled) return;

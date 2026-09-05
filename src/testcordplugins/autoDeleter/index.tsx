@@ -7,7 +7,6 @@
 import * as DataStore from "@api/DataStore";
 import { definePluginSettings } from "@api/Settings";
 import { TestcordDevs } from "@utils/constants";
-import { sleep } from "@utils/misc";
 import definePlugin, { OptionType } from "@utils/types";
 import { findByPropsLazy } from "@webpack";
 import {
@@ -293,6 +292,10 @@ function messageSendWrapper(content: string, nonce: string, channelId: string) {
         },
     });
     return wrapperResponse;
+}
+
+async function sleep(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 function messageDeleteWrapper(channelId: string, messageId: string) {
@@ -1115,7 +1118,7 @@ export default definePlugin({
     startRetryProcessor() {
         this.retryProcessor = setInterval(() => {
             this.processRetryQueue();
-        }, 2000); // Check every 2 seconds
+        }, 1000); // Check every second
     },
 
     processRetryQueue() {
@@ -1503,7 +1506,7 @@ export default definePlugin({
             const importedSettings = JSON.parse(settingsData);
             // Validate and apply imported settings
             Object.keys(importedSettings).forEach(key => {
-                if (Object.prototype.hasOwnProperty.call(settings.store, key)) {
+                if (settings.store.hasOwnProperty(key)) {
                     settings.store[key] = importedSettings[key];
                 }
             });

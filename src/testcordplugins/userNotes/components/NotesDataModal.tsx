@@ -5,7 +5,8 @@
  */
 
 import { classNameFactory } from "@api/Styles";
-import { copyWithToast, openPrivateChannel, openUserProfile } from "@utils/discord";
+import { openPrivateChannel, openUserProfile } from "@utils/discord";
+import { copyWithToast } from "@utils/discord";
 import {
     closeModal, ModalCloseButton, ModalContent, ModalHeader, ModalProps, ModalRoot, openModal
 } from "@utils/modal";

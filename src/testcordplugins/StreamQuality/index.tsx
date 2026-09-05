@@ -315,7 +315,7 @@ const activeConnections = new Set<any>();
 
 function triggerLiveUpdate() {
     for (const connection of activeConnections) {
-        if (connection.destroyed || !connection.conn) {
+        if (connection.destroyed) {
             activeConnections.delete(connection);
             continue;
         }
@@ -355,7 +355,6 @@ function triggerLiveUpdate() {
 
 function onConnection(connection: any) {
     if (connection.context !== "stream") return;
-    if (!connection.conn) return;
 
     // We only patch outbound streams
     if (connection.streamUserId && connection.streamUserId !== UserStore.getCurrentUser()?.id) return;
@@ -467,7 +466,6 @@ function onConnection(connection: any) {
     }
 
     const forceEngineSettings = () => {
-        if (!connection.conn) return;
         if (connection.conn.overwriteQualityForTesting) {
             const res = getRealResolution();
             const bitrateValue = s.bitrate * 1000;
@@ -494,7 +492,6 @@ function onConnection(connection: any) {
     const emitter = connection.emitter ?? connection;
 
     const onConnected = () => {
-        if (!connection.conn) return;
         // Double check if it's our stream
         if (connection.streamUserId && connection.streamUserId !== UserStore.getCurrentUser()?.id) return;
 
@@ -558,8 +555,9 @@ export default definePlugin({
     patches: [
         {
             find: "#{intl::STREAM_FPS_OPTION}",
+            predicate: () => true,
             replacement: {
-                match: /guildPremiumTier:\i\.\i\.TIER_\d,?/,
+                match: /guildPremiumTier:\i\.\i\.TIER_\d,?/g,
                 replace: "",
             },
         },

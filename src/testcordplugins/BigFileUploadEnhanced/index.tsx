@@ -188,7 +188,6 @@ const CATBOX_IMAGE_HOSTS = [
 ] as const;
 
 const PREVIEW_IMAGE_EXTS = ["png", "jpg", "jpeg", "gif", "webp"] as const;
-const MAX_BROWSER_PICKED_FILE_BYTES = 1024 * 1024 * 1024;
 
 function isHttpUrl(input: string) {
     try {
@@ -349,7 +348,6 @@ async function pickFile(): Promise<PickedFile | null> {
 
     const file = await chooseFile("*/*");
     if (!file) return null;
-    if (file.size > MAX_BROWSER_PICKED_FILE_BYTES) throw new Error("Selected file is too large to read in the browser path.");
 
     const name = normalizePickedFileName(file.name, file.type || "application/octet-stream", new Uint8Array(await file.slice(0, 64).arrayBuffer()));
     const mimeType = normalizePickedMimeType(file.type || "application/octet-stream", name);
@@ -362,9 +360,9 @@ async function pickFile(): Promise<PickedFile | null> {
 
 function buildUploadPayload(file: PickedFile): UploadPayload {
     const { bytes } = file;
-    const ab = bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength
-        ? bytes.buffer as ArrayBuffer
-        : bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+    const copy = new Uint8Array(bytes.byteLength);
+    copy.set(bytes);
+    const ab = copy.buffer;
     return {
         fileBuffer: ab,
         fileName: file.name,

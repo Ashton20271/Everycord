@@ -9,7 +9,6 @@ import { DataStore } from "@api/index";
 import { definePluginSettings } from "@api/Settings";
 import { Link } from "@components/Link";
 import { TestcordDevs } from "@utils/constants";
-import { sleep } from "@utils/misc";
 import definePlugin, { OptionType } from "@utils/types";
 import { findByCodeLazy,findByPropsLazy } from "@webpack";
 import { Menu, SelectedChannelStore,showToast, Toasts } from "@webpack/common";
@@ -129,6 +128,10 @@ async function isInHeartGifs(url: string): Promise<boolean> {
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function sleep(ms: number): Promise<void> {
+    return new Promise(r => setTimeout(r, ms));
+}
 
 function getToken(): string | null {
     try {
@@ -396,9 +399,8 @@ async function scanUserGifs(userId: string, username: string, guildId: string | 
 const userContextMenuPatch: NavContextMenuPatchCallback = (children, { user, guildId }) => {
     if (!user) return;
     children.push(
-        <Menu.MenuSeparator key="save-user-gifs-separator" />,
+        <Menu.MenuSeparator />,
         <Menu.MenuItem
-            key="save-user-gifs"
             id="save-user-gifs"
             label="Save GIFs from user"
             disabled={isScanning}
@@ -406,7 +408,6 @@ const userContextMenuPatch: NavContextMenuPatchCallback = (children, { user, gui
         />,
         ...(isScanning ? [
             <Menu.MenuItem
-                key="save-user-gifs-stop"
                 id="save-user-gifs-stop"
                 label="⏹ Stop saving GIFs"
                 action={() => {
@@ -415,7 +416,6 @@ const userContextMenuPatch: NavContextMenuPatchCallback = (children, { user, gui
                 }}
             />,
             <Menu.MenuItem
-                key="save-user-gifs-status"
                 id="save-user-gifs-status"
                 label={`📊 ${currentGifsFound} GIFs found so far`}
                 action={() => showToast(`${currentGifsFound} GIFs found so far`, Toasts.Type.MESSAGE)}

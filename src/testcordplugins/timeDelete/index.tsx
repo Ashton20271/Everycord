@@ -69,10 +69,8 @@ function TimeDeleteIcon({ height = 20, width = 20, className, color = "currentCo
     );
 }
 
-const TIME_DELETE_KEYS = ["isActive"] as const;
-
 function TimeDeleteButton() {
-    const { isActive } = settings.use(TIME_DELETE_KEYS);
+    const { isActive } = settings.use(["isActive"]);
 
     const ButtonIcon = (props: IconProps & { color?: string; }) => (
         <TimeDeleteIcon

@@ -68,10 +68,10 @@ const collections = [
     },
     {
         name: "OpenCord",
-        dir: "src/everycordplugins",
+        dir: "src/opencordplugins",
         source: "[MasuRii/OpenCord](https://github.com/MasuRii/OpenCord)",
         url: "https://github.com/MasuRii/OpenCord",
-        logo: "assets/branding/everycord-symbol-dark.svg",
+        logo: "assets/branding/opencord-symbol-dark.svg",
         color: "0F172A"
     }
 ];
@@ -83,7 +83,7 @@ function countPluginDirs(dir) {
 const visiblePluginDirs = [
     "plugins/_api", "plugins/_core", "plugins",
     "equicordplugins/_api", "equicordplugins/_core", "equicordplugins",
-    "everycordplugins/_api", "everycordplugins/_core", "everycordplugins",
+    "opencordplugins/_api", "opencordplugins/_core", "opencordplugins",
     "illegalcordplugins/_api", "illegalcordplugins/_core", "illegalcordplugins",
     "testcordplugins/_api", "testcordplugins/_core", "testcordplugins",
     "esharqplugins/_api", "esharqplugins/_core", "esharqplugins",

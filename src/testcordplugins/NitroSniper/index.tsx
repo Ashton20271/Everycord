@@ -16,8 +16,6 @@ const GiftActions = findByPropsLazy("redeemGiftCode");
 
 let startTime = 0;
 let claiming = false;
-let pluginActive = false;
-let generation = 0;
 const codeQueue: Array<{ code: string; channelId: string; guildId?: string; messageId: string; }> = [];
 
 const settings = definePluginSettings({
@@ -34,10 +32,9 @@ const settings = definePluginSettings({
 });
 
 function processQueue() {
-    if (!pluginActive || claiming || !codeQueue.length) return;
+    if (claiming || !codeQueue.length) return;
 
     claiming = true;
-    const claimGeneration = generation;
     const { code, channelId, guildId, messageId } = codeQueue.shift()!;
 
     logger.log(`Attempting to redeem code: ${code} (channel: ${channelId}, guild: ${guildId ?? "dm"})`);
@@ -45,7 +42,6 @@ function processQueue() {
     GiftActions.redeemGiftCode({
         code,
         onRedeemed: (gift: any) => {
-            if (!pluginActive || claimGeneration !== generation) return;
             logger.log(`Successfully redeemed code: ${code} (channel: ${channelId}, guild: ${guildId ?? "dm"})`);
 
             if (settings.store.notifyOnRedeem) {
@@ -68,7 +64,6 @@ function processQueue() {
         },
 
         onError: (err: Error) => {
-            if (!pluginActive || claimGeneration !== generation) return;
             logger.error(`Failed to redeem code: ${code} (channel: ${channelId}, guild: ${guildId ?? "dm"})`, err);
 
             if (settings.store.notifyOnFail) {
@@ -103,16 +98,7 @@ export default definePlugin({
     settings,
 
     start() {
-        pluginActive = true;
-        generation++;
         startTime = Date.now();
-        codeQueue.length = 0;
-        claiming = false;
-    },
-
-    stop() {
-        pluginActive = false;
-        generation++;
         codeQueue.length = 0;
         claiming = false;
     },

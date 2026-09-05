@@ -27,10 +27,8 @@ export const TranslateIcon: IconComponent = ({ height = 20, width = 20, classNam
 
 export let setShouldShowTranslateEnabledTooltip: undefined | ((show: boolean) => void);
 
-const AUTO_TRANSLATE_KEYS = ["autoTranslate"] as const;
-
 export const TranslateChatBarIcon: ChatBarButtonFactory = ({ isMainChat }) => {
-    const { autoTranslate } = settings.use(AUTO_TRANSLATE_KEYS);
+    const { autoTranslate } = settings.use(["autoTranslate"]);
     const [shouldShowTooltip, setter] = useState(false);
 
     useEffect(() => {

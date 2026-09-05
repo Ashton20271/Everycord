@@ -7,7 +7,8 @@
 import * as DataStore from "@api/DataStore";
 import { ChannelToolbarButton } from "@api/HeaderBar";
 import { definePluginSettings } from "@api/Settings";
-import definePlugin, { OptionType } from "@utils/types";
+import definePlugin from "@utils/types";
+import { OptionType } from "@utils/types";
 import { Constants, React, RestAPI, UserStore } from "@webpack/common";
 
 const settings = definePluginSettings({

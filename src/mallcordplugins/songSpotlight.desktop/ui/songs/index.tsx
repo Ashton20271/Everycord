@@ -43,7 +43,7 @@ import {
     useCallback,
     useMemo,
     useRef,
-    useState
+    useState,
 } from "@webpack/common";
 
 interface SongEntryProps {
@@ -134,28 +134,27 @@ interface SongInfoProps {
 }
 
 function SongInfo({ owned, song, render, big }: SongInfoProps) {
-    const [playing, setPlaying] = useState<number | undefined>(undefined);
+    const [playing, setPlaying] = useState<number | false>(false);
     const [loaded, setLoaded] = useState(new Set<number>());
-    const setLoadedAudio = useCallback((index: number, state: boolean) => {
-        if (state) loaded.add(index);
-        else loaded.delete(index);
-        setLoaded(new Set(loaded));
-    }, [loaded]);
-
     const audios = useMemo(() => render.form === "single" ? [render.single] : render.list, [render]);
     const audioRef = useRef<HTMLAudioElement>(undefined);
-    const playingRef = useRef<RenderInfoEntry>(undefined);
-    playingRef.current = playing !== undefined ? audios[playing] : undefined;
-
     const duration = useMemo(
-        () =>
-            render.form === "single" ?
-                render.single.audio?.duration :
-                playing !== undefined ?
-                    render.list[playing].audio?.duration :
-                    undefined,
+        () => {
+            if (playing !== false) {
+                return audios[playing].audio?.duration;
+            } else {
+                return render.form === "single" ? render.single.audio?.duration : undefined;
+            }
+        },
         [playing, render],
     );
+
+    const setLoadedAudio = useCallback((index: number, state: boolean) =>
+        setLoaded(ld => {
+            if (state) ld.add(index);
+            else ld.delete(index);
+            return new Set(ld);
+        }), []);
 
     const baseSize = big ? "md" : "sm";
     const subSize = big ? "sm" : "xs";
@@ -167,7 +166,7 @@ function SongInfo({ owned, song, render, big }: SongInfoProps) {
                 list={audios}
                 playing={playing}
                 setPlaying={setPlaying}
-                setLoadedAudio={setLoadedAudio}
+                setLoaded={setLoadedAudio}
             />
             <div className={cl("song-grid")}>
                 <Flex gap="8px" alignItems="center" className={cl("song-core")}>
@@ -274,7 +273,7 @@ function SongInfo({ owned, song, render, big }: SongInfoProps) {
                     alignItems="flex-end"
                     gap="6px"
                     className={cl("song-player")}
-                    data-idle={playing === undefined && !big}
+                    data-idle={playing === false && !big}
                 >
                     {duration && (
                         <BaseText size={subSize} weight="medium" className={cl("mono", "sub")}>
@@ -283,19 +282,19 @@ function SongInfo({ owned, song, render, big }: SongInfoProps) {
                     )}
                     <div className={cl("song-progress-container")}>
                         <ProgressCircle
-                            border={2.5}
-                            playingRef={playingRef}
+                            border={2}
                             audioRef={audioRef}
                             className={cl("song-progress")}
                         />
                         <PlayButton
-                            state={playing !== undefined}
+                            state={playing !== false}
                             disabled={loaded.size < 1}
                             onClick={() => {
-                                if (playing !== undefined) return setPlaying(undefined);
+                                const loadedI = loaded.values().toArray().sort()[0];
+                                if (loadedI === undefined) return;
 
-                                const loadedIndex = loaded.values().toArray().sort()[0];
-                                if (loadedIndex !== undefined) setPlaying(loadedIndex);
+                                if (playing !== false) setPlaying(false);
+                                else setPlaying(loadedI);
                             }}
                         />
                     </div>
@@ -313,8 +312,10 @@ function SongInfo({ owned, song, render, big }: SongInfoProps) {
                                     isLoaded={loaded.has(i)}
                                     isPlaying={playing === i}
                                     onClick={() => {
-                                        if (playing === i) setPlaying(undefined);
-                                        else if (loaded.has(i)) setPlaying(i);
+                                        if (!loaded.has(i)) return;
+
+                                        if (playing !== i) setPlaying(i);
+                                        else setPlaying(false);
                                     }}
                                     big={big}
                                     key={entry.link}

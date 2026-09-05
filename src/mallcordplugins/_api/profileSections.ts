@@ -14,9 +14,9 @@ export default definePlugin({
     patches: [
         // dm user sidebar
         {
-            find: ".SIDEBAR,disableToolbar:",
+            find: "#{intl::PROVISIONAL_ACCOUNT}),headingIcon:",
             replacement: {
-                match: /(#{intl::USER_PROFILE_MEMBER_SINCE}\),.{0,100}userId:(\i\.id)\}\)\}\))(?=.{0,100}unownedWishlistItems:\i,wishlistId:\i)/,
+                match: /(#{intl::USER_PROFILE_MEMBER_SINCE}\),.{0,100}userId:(\i\.id)}\)}\))/,
                 replace: "$1,Vencord.Api.ProfileSections.renderProfileSections({userId:$2,isSideBar:true})",
             }
         },

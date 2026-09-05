@@ -14,66 +14,10 @@ import { React, useEffect, useState } from "@webpack/common";
 const KEY = "MallCord_MessageStats";
 const DAY = 24 * 60 * 60 * 1000;
 
-interface StoredStats {
-    version: 1;
-    days: Record<string, number>;
-    total: number;
-}
-
-function emptyStats(): StoredStats {
-    return { version: 1, days: {}, total: 0 };
-}
-
-function dayKey(ts: number) {
-    return startOfDay(ts).toString();
-}
-
-function keyTime(key: string) {
-    const numeric = Number(key);
-    return Number.isNaN(numeric) ? Date.parse(key) : numeric;
-}
-
-function normalizeStats(value: unknown): StoredStats {
-    if (Array.isArray(value)) {
-        const stats = emptyStats();
-        for (const t of value) {
-            if (typeof t !== "number") continue;
-            const key = dayKey(t);
-            stats.days[key] = (stats.days[key] ?? 0) + 1;
-            stats.total++;
-        }
-        return pruneStats(stats);
-    }
-
-    if (value && typeof value === "object" && "days" in value) {
-        const raw = value as Partial<StoredStats>;
-        const days: Record<string, number> = {};
-        for (const [key, count] of Object.entries(raw.days ?? {})) {
-            if (typeof count === "number" && count > 0) days[key] = count;
-        }
-        return pruneStats({ version: 1, days, total: Object.values(days).reduce((sum, count) => sum + count, 0) });
-    }
-
-    return emptyStats();
-}
-
-function pruneStats(stats: StoredStats) {
-    const cutoff = Date.now() - 365 * DAY;
-    for (const key of Object.keys(stats.days)) {
-        if (keyTime(key) < cutoff) delete stats.days[key];
-    }
-    stats.total = Object.values(stats.days).reduce((sum, count) => sum + count, 0);
-    return stats;
-}
-
 async function record() {
-    await DataStore.update<unknown>(KEY, old => {
-        const stats = normalizeStats(old);
-        const today = dayKey(Date.now());
-        stats.days[today] = (stats.days[today] ?? 0) + 1;
-        stats.total++;
-        return stats;
-    });
+    const now = Date.now();
+    const cutoff = now - 365 * DAY;
+    await DataStore.update<number[]>(KEY, old => [...(old ?? []).filter(t => t > cutoff), now]);
 }
 
 function startOfDay(ts: number) {
@@ -82,11 +26,15 @@ function startOfDay(ts: number) {
     return d.getTime();
 }
 
-function streak(stats: StoredStats, goal: number) {
+function streak(timestamps: number[], goal: number) {
+    const perDay = new Map<number, number>();
+    for (const t of timestamps) perDay.set(startOfDay(t), (perDay.get(startOfDay(t)) ?? 0) + 1);
+
     let count = 0;
     let day = startOfDay(Date.now());
+    // allow today to still be in progress: only break the streak on a *past* day that missed the goal
     while (true) {
-        const hit = (stats.days[dayKey(day)] ?? 0) >= goal;
+        const hit = (perDay.get(day) ?? 0) >= goal;
         if (hit) count++;
         else if (day < startOfDay(Date.now())) break;
         day -= DAY;
@@ -105,30 +53,24 @@ const row = (label: string, value: React.ReactNode, color?: string) => (
 
 function StatsPanel() {
     const { dailyGoal } = settings.use(["dailyGoal"]);
-    const [stats, setStats] = useState<StoredStats>(emptyStats);
+    const [timestamps, setTimestamps] = useState<number[]>([]);
 
-    const reload = () => DataStore.get<unknown>(KEY).then(v => setStats(normalizeStats(v)));
+    const reload = () => DataStore.get<number[]>(KEY).then(v => setTimestamps(v ?? []));
     useEffect(() => { reload(); }, []);
 
     const now = Date.now();
-    const since = (ms: number) => {
-        const cutoff = now - ms;
-        let count = 0;
-        for (const [key, value] of Object.entries(stats.days)) {
-            if (keyTime(key) >= cutoff) count += value;
-        }
-        return count;
-    };
+    const since = (ms: number) => timestamps.filter(t => now - t < ms).length;
 
     const goal = dailyGoal || 100;
-    const today = stats.days[dayKey(now)] ?? 0;
+    const today = since(DAY);
     const pct = Math.min(Math.round((today / goal) * 100), 100);
 
-    const dayKeys = Object.keys(stats.days);
-    const earliest = dayKeys.length ? Math.min(...dayKeys.map(keyTime)) : now;
-    const days = Math.max(1, Math.ceil((now - earliest) / DAY));
-    const avg = Math.round(stats.total / days);
-    const best = dayKeys.length ? Math.max(...Object.values(stats.days)) : 0;
+    const days = Math.max(1, Math.ceil((now - Math.min(now, ...timestamps)) / DAY));
+    const avg = Math.round(timestamps.length / days);
+
+    const perDay = new Map<number, number>();
+    for (const t of timestamps) perDay.set(startOfDay(t), (perDay.get(startOfDay(t)) ?? 0) + 1);
+    const best = perDay.size ? Math.max(...perDay.values()) : 0;
 
     return (
         <div style={{ color: "var(--text-normal)" }}>
@@ -150,15 +92,15 @@ function StatsPanel() {
                     {row("This week", since(7 * DAY))}
                     {row("This month", since(30 * DAY))}
                     {row("This year", since(365 * DAY))}
-                    {row("All time (tracked)", stats.total)}
+                    {row("All time (tracked)", timestamps.length)}
                     {row("Daily average", avg)}
                     {row("Best day", best)}
-                    {row("Current streak", `${streak(stats, goal)} day(s)`, "var(--text-brand)")}
+                    {row("Current streak", `${streak(timestamps, goal)} day(s)`, "var(--text-brand)")}
                 </tbody>
             </table>
 
             <button
-                onClick={async () => { await DataStore.set(KEY, emptyStats()); reload(); }}
+                onClick={async () => { await DataStore.set(KEY, []); reload(); }}
                 style={{ marginTop: 15, background: "var(--background-tertiary)", color: "var(--text-normal)", border: "1px solid var(--background-modifier-accent)", padding: "8px 12px", borderRadius: 4, cursor: "pointer" }}
             >
                 Reset stats
@@ -193,18 +135,11 @@ export default definePlugin({
             description: "Show your message stats here in chat",
             options: [],
             execute: async (_, ctx) => {
-                const stats = normalizeStats(await DataStore.get<unknown>(KEY));
+                const ts = (await DataStore.get<number[]>(KEY)) ?? [];
                 const now = Date.now();
-                const since = (ms: number) => {
-                    const cutoff = now - ms;
-                    let count = 0;
-                    for (const [key, value] of Object.entries(stats.days)) {
-                        if (keyTime(key) >= cutoff) count += value;
-                    }
-                    return count;
-                };
+                const since = (ms: number) => ts.filter(t => now - t < ms).length;
                 sendBotMessage(ctx.channel.id, {
-                    content: `📊 **Your messages** — today **${stats.days[dayKey(now)] ?? 0}** · week **${since(7 * DAY)}** · month **${since(30 * DAY)}** · year **${since(365 * DAY)}** · all-time **${stats.total}**`
+                    content: `📊 **Your messages** — today **${since(DAY)}** · week **${since(7 * DAY)}** · month **${since(30 * DAY)}** · year **${since(365 * DAY)}** · all-time **${ts.length}**`
                 });
             }
         }

@@ -61,7 +61,6 @@ const URL_KEYWORDS = ["url", "src", "proxy"];
 const URL_CONTAINER_KEYS = ["gif", "media", "image", "video", "thumbnail", "preview", "result", "item"];
 const loadedFontFamilies = new Set<string>();
 const loadingFontFamilies = new Map<string, Promise<void>>();
-const MAX_MEDIA_PIXELS = 4_000_000;
 
 export const createGoogleFontUrl = (family: string, options = "") =>
     `https://fonts.googleapis.com/css2?family=${encodeURIComponent(family)}${options}&display=swap`;
@@ -167,7 +166,6 @@ async function resolveMedia(urls: string[]) {
         const blob = new Blob([result.buffer], { type: result.contentType });
         const metadata = await inspectMedia(result.buffer, result.contentType, blob);
         if (!metadata) continue;
-        if (metadata.width * metadata.height > MAX_MEDIA_PIXELS) continue;
 
         const previewUrl = URL.createObjectURL(blob);
         let released = false;
@@ -361,10 +359,6 @@ function showCaptioner(media: CaptionMedia, onConfirm: (transform: GifTransform)
     openModal((modalProps: any) => (
         <Modal
             {...modalProps}
-            onClose={() => {
-                release();
-                modalProps.onClose();
-            }}
             media={media}
             onCancel={release}
             onSubmit={callback => {
@@ -394,7 +388,6 @@ export default definePlugin({
     patches: [
         {
             find: "renderGIF",
-            noWarn: true,
             replacement: {
                 match: /(children:\[)(\i\([^)]+\)\?null:this\.renderGIF\(\))/,
                 replace: "$1$self.renderCaptionButton(this),$2"
@@ -405,8 +398,6 @@ export default definePlugin({
     start() {
         void fetchAllGoogleFonts();
     },
-
-    stop() {},
 
     renderCaptionButton(instance: GifPickerItemInstance) {
         const props = instance?.props;

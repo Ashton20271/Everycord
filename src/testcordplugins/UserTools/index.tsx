@@ -30,7 +30,7 @@ import {
 } from "@webpack/common";
 import type { PropsWithChildren, ReactNode, SVGProps } from "react";
 
-const HeaderBarIcon = findComponentByCodeLazy(".HEADER_BAR_BADGE_TOP:", '"top"===c');
+const HeaderBarIcon = findComponentByCodeLazy(".HEADER_BAR_BADGE_TOP:", '.iconBadge,"top"');
 
 interface BaseIconProps extends IconProps {
     viewBox: string;
@@ -109,24 +109,6 @@ interface UserActions {
     deafen: boolean;
 }
 
-let _userActionsCache: Record<string, UserActions> | null = null;
-let _userActionsRaw: string | null = null;
-function getParsedUserActions(): Record<string, UserActions> {
-    const raw = settings.store.userActions || "{}";
-    if (raw === _userActionsRaw && _userActionsCache) return _userActionsCache;
-    try {
-        _userActionsCache = JSON.parse(raw);
-    } catch {
-        _userActionsCache = {};
-    }
-    _userActionsRaw = raw;
-    return _userActionsCache!;
-}
-function invalidateUserActionsCache() {
-    _userActionsCache = null;
-    _userActionsRaw = null;
-}
-
 export const settings = definePluginSettings({
     userActions: {
         type: OptionType.STRING,
@@ -143,23 +125,26 @@ const Auth: { getToken: () => string; } = findByPropsLazy("getToken");
 let currentModalKey: string | null = null;
 
 function getUserActions(userId: string): UserActions {
-    const actions = getParsedUserActions();
-    return actions[userId] || { disconnect: false, mute: false, deafen: false };
-}
-
-function getAllUserActions(): Record<string, UserActions> {
-    return getParsedUserActions();
+    try {
+        const actions = JSON.parse(settings.store.userActions || "{}");
+        return actions[userId] || { disconnect: false, mute: false, deafen: false };
+    } catch {
+        return { disconnect: false, mute: false, deafen: false };
+    }
 }
 
 function setUserActions(userId: string, actions: UserActions) {
-    const allActions = getParsedUserActions();
-    if (actions.disconnect || actions.mute || actions.deafen) {
-        allActions[userId] = actions;
-    } else {
-        delete allActions[userId];
+    try {
+        const allActions = JSON.parse(settings.store.userActions || "{}");
+        if (actions.disconnect || actions.mute || actions.deafen) {
+            allActions[userId] = actions;
+        } else {
+            delete allActions[userId];
+        }
+        settings.store.userActions = JSON.stringify(allActions);
+    } catch (e) {
+        console.error("Failed to save user actions:", e);
     }
-    settings.store.userActions = JSON.stringify(allActions);
-    invalidateUserActionsCache();
 }
 
 async function disconnectGuildMember(guildId: string, userId: string) {
@@ -223,15 +208,20 @@ interface UserContextProps {
 }
 
 function getActiveUsers(): Array<{ userId: string; actions: UserActions; }> {
-    const allActions = getParsedUserActions();
-    const out: Array<{ userId: string; actions: UserActions; }> = [];
-    for (const [userId, actions] of Object.entries(allActions)) {
-        const a = actions as UserActions;
-        if (a && (a.disconnect || a.mute || a.deafen)) {
-            out.push({ userId, actions: a });
-        }
+    try {
+        const allActions = JSON.parse(settings.store.userActions || "{}");
+        return Object.entries(allActions)
+            .filter(([_, actions]) => {
+                const a = actions as UserActions;
+                return a && (a.disconnect || a.mute || a.deafen);
+            })
+            .map(([userId, actions]) => ({
+                userId,
+                actions: actions as UserActions
+            }));
+    } catch {
+        return [];
     }
-    return out;
 }
 
 function disableUserTools(userId: string, currentGuildId?: string) {
@@ -447,9 +437,9 @@ const UserContext: NavContextMenuPatchCallback = (children, { user, guildId }: U
     if (!user || user.id === UserStore.getCurrentUser().id) return;
     if (!guildId) return; // Only work in guilds
 
-    const allActions = getAllUserActions();
-    const actions = allActions[user.id] ?? { disconnect: false, mute: false, deafen: false };
-    const hasActiveUsers = Object.values(allActions).some(actions => actions.disconnect || actions.mute || actions.deafen);
+    const actions = getUserActions(user.id);
+    const hasAnyAction = actions.disconnect || actions.mute || actions.deafen;
+    const activeUsers = getActiveUsers();
 
     children.splice(-1, 0, (
         <Menu.MenuGroup key="user-tools-group">
@@ -510,7 +500,7 @@ const UserContext: NavContextMenuPatchCallback = (children, { user, guildId }: U
                     }
                 }}
             />
-            {hasActiveUsers && (
+            {activeUsers.length > 0 && (
                 <Menu.MenuItem
                     id="user-tools-active-users"
                     label="Active Users"
@@ -541,9 +531,8 @@ export default definePlugin({
         {
             find: "toolbar:function",
             replacement: {
-                match: /(function\s+[A-Za-z_$][\w$]*\(\i\)\{)([\s\S]{1,600}?toolbar[\s\S]{1,300}?mobileToolbar)/,
-                replace: "$1$self.addIconToToolBar(arguments[0]);$2",
-                noWarn: true
+                match: /(function \i\(\i\){)(.{1,200}toolbar.{1,100}mobileToolbar)/,
+                replace: "$1$self.addIconToToolBar(arguments[0]);$2"
             }
         },
     ],
@@ -564,7 +553,7 @@ export default definePlugin({
     flux: {
         VOICE_STATE_UPDATES({ voiceStates }: { voiceStates: VoiceState[]; }) {
             try {
-                const allActions = getParsedUserActions();
+                const allActions = JSON.parse(settings.store.userActions || "{}");
 
                 for (const { userId, channelId, oldChannelId } of voiceStates) {
                     const actions = allActions[userId] as UserActions | undefined;
@@ -604,7 +593,7 @@ export default definePlugin({
 
     UserToolsIndicator() {
         try {
-            const allActions = getParsedUserActions();
+            const allActions = JSON.parse(settings.store.userActions || "{}");
             const activeUsers = Object.keys(allActions).filter(userId => {
                 const actions = allActions[userId] as UserActions;
                 return actions && (actions.disconnect || actions.mute || actions.deafen);
@@ -621,13 +610,10 @@ export default definePlugin({
                 <HeaderBarIcon
                     tooltip={tooltip}
                     icon={DisconnectIcon}
-                    className="vc-plugin-icon-button"
-                    iconClassName="vc-plugin-icon-button"
                     onClick={() => openUserToolsModal()}
                     onContextMenu={e => {
                         e.preventDefault();
                         settings.store.userActions = "{}";
-                        invalidateUserActionsCache();
                         Toasts.show({
                             message: "All UserTools actions disabled",
                             id: Toasts.genId(),

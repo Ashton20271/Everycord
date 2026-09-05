@@ -16,7 +16,6 @@ import { t } from "@utils/esharqI18n";
 import { Logger } from "@utils/Logger";
 import { useForceUpdater } from "@utils/react";
 import definePlugin, { PluginNative } from "@utils/types";
-import { findAll, findStore } from "@webpack";
 import { React, useEffect } from "@webpack/common";
 
 import { settings } from "./settings";
@@ -60,78 +59,9 @@ function applyCss() {
     const root = document.documentElement;
     root.classList.toggle("vc-perfboost-no-anim", settings.store.disableAnimations);
     root.classList.toggle("vc-perfboost-hide-activities", settings.store.hideActivities);
-    root.classList.add("vc-perfboost-active"); // تحسينات عرض خفيفة أثناء تفعيل الوضع
 }
 function removeCss() {
-    document.documentElement.classList.remove("vc-perfboost-no-anim", "vc-perfboost-hide-activities", "vc-perfboost-active");
-}
-
-// ── تحسينات وقت التشغيل (كلها لمرة واحدة عند التفعيل — بلا حلقات/مؤقّتات، فلا تُثقل ولا تُسرّب) ──
-const PASSIVE_EVENTS = ["wheel", "mousewheel", "touchstart", "touchmove", "touchend"];
-let originalAddEventListener: typeof EventTarget.prototype.addEventListener | null = null;
-let springs: { Globals?: { assign?: (o: Record<string, unknown>) => void; }; }[] = [];
-
-// تفريغ كاش عدد كبير من الـStores الثقيلة لتحرير الذاكرة (اختياري — قد يُعيد الجلب لاحقاً).
-// نستدعي clearCache فقط (كاش قابل لإعادة البناء) ولا نلمس clear لأنها قد تمسح بيانات حقيقية (كالمسوّدات).
-const CACHE_STORE_NAMES = [
-    "MessageStore", "EmojiStore", "StickersStore", "UserProfileStore", "InviteStore",
-    "ApplicationStore", "ExperimentStore", "QuestStore", "SoundboardStore", "SpellCheckStore",
-    "RunningGameStore", "ApplicationStreamingStore", "ApplicationStreamPreviewStore",
-    "UserAffinitiesStore", "ApplicationCommandIndexStore", "ReadStateStore", "TypingStore"
-];
-
-function clearStoreCaches() {
-    let n = 0;
-    for (const name of CACHE_STORE_NAMES) {
-        try {
-            const store = findStore(name) as { clearCache?: () => void; } | undefined;
-            if (typeof store?.clearCache === "function") { store.clearCache(); n++; }
-        } catch (e) { logger.warn(`clearCache ${name} failed`, e); }
-    }
-    if (typeof (window as any).gc === "function") { try { (window as any).gc(); } catch { /* gc غير متاح */ } }
-    logger.info(`Cleared ${n} store caches`);
-}
-
-function applyRuntimeOpts() {
-    // تخطّي حركات Spring (قابل للعكس)
-    if (settings.store.skipSpringAnimations && springs.length === 0) {
-        springs = findAll(m => typeof (m as any)?.Globals === "object" && typeof (m as any)?.Springs === "object") as typeof springs;
-        for (const s of springs) s.Globals?.assign?.({ skipAnimation: true });
-    }
-    // جعل مستمعي التمرير/اللمس passive — تمرير أنعم (قابل للعكس)
-    if (settings.store.passiveListeners && !originalAddEventListener) {
-        originalAddEventListener = EventTarget.prototype.addEventListener;
-        const orig = originalAddEventListener;
-        EventTarget.prototype.addEventListener = function (this: EventTarget, type: string, listener: any, options?: any) {
-            if (PASSIVE_EVENTS.includes(type) && listener != null) {
-                if (typeof options === "boolean" || options === undefined) options = { capture: !!options, passive: true };
-                else if (options.passive === undefined) options = { ...options, passive: true };
-            }
-            return orig.call(this, type, listener, options);
-        } as typeof EventTarget.prototype.addEventListener;
-    }
-    // صور كسولة + فكّ ترميز غير متزامن (لمرة واحدة، غير مؤذٍ). نتخطّى صور الدردشة:
-    // loading=lazy/decoding=async عليها يكسران التمرير التلقائي لأسفل المحادثة.
-    if (settings.store.lazyImages) {
-        const isChatImage = (img: HTMLImageElement) =>
-            img.closest('[class*="scrollerInner_"], [class*="messageListItem_"]') !== null;
-        document.querySelectorAll<HTMLImageElement>("img").forEach(img => {
-            if (isChatImage(img)) return;
-            if (!img.loading) img.loading = "lazy";
-            if (!img.decoding) img.decoding = "async";
-        });
-    }
-    if (settings.store.clearStoreCaches) clearStoreCaches();
-}
-
-// عكس كل ما هو قابل للعكس — يمنع تسريب الرقعة على addEventListener.
-function removeRuntimeOpts() {
-    for (const s of springs) s.Globals?.assign?.({ skipAnimation: false });
-    springs = [];
-    if (originalAddEventListener) {
-        EventTarget.prototype.addEventListener = originalAddEventListener;
-        originalAddEventListener = null;
-    }
+    document.documentElement.classList.remove("vc-perfboost-no-anim", "vc-perfboost-hide-activities");
 }
 
 // ── تطبيق واستعادة الإعدادات التلقائية (Compact + GIF) ──
@@ -224,57 +154,12 @@ async function promptHardwareRestart() {
     );
 }
 
-// ── مراقب الحمل الاختياري (autoHighLoad — مُطفأ افتراضياً) ──
-// عيّنة CPU إجمالية كل 30 ثانية عبر getAppMetrics (بلا عمليات خارجية). عيّنتان متتاليتان
-// فوق الحدّ → تفعيل تلقائي؛ وعيّنتان متتاليتان دون 60% من الحدّ → إيقاف تلقائي، لكن فقط
-// إن كان التفعيل الأخير بسبب الحمل (لا نلمس ما فعّله المستخدم/كشف الألعاب).
-let loadTimer: ReturnType<typeof setInterval> | null = null;
-let highStreak = 0, lowStreak = 0;
-let autoByLoad = false; // آخر تفعيل كان بسبب الحمل ⇒ يجوز لنا وحدنا عكسه تلقائياً
-
-async function sampleLoad() {
-    if (!Native || !settings.store.autoHighLoad) return;
-    try {
-        const cpu = await Native.getTotalCpu();
-        const threshold = settings.store.cpuThreshold ?? 160;
-        if (cpu >= threshold) { highStreak++; lowStreak = 0; }
-        else if (cpu < threshold * 0.6) { lowStreak++; highStreak = 0; }
-        else { highStreak = 0; lowStreak = 0; }
-
-        if (!active && !manualOff && highStreak >= 2) {
-            highStreak = 0;
-            autoByLoad = true;
-            await applyMode();
-            notice(t(`استهلاك المعالج مرتفع (${Math.round(cpu)}%) — فُعّل وضع الأداء تلقائياً.`, `High CPU usage (${Math.round(cpu)}%) — performance mode enabled automatically.`), "info");
-        } else if (active && autoByLoad && lowStreak >= 2) {
-            lowStreak = 0;
-            autoByLoad = false;
-            await revertMode();
-        }
-    } catch (e) { logger.warn("load sample failed", e); }
-}
-
-// المؤقّت يعمل طوال تفعيل الإضافة على سطح المكتب؛ sampleLoad يخرج فوراً (فحص boolean
-// واحد، بلا أي نداء native) ما دام الخيار مُطفأً — فيستجيب التبديل حيّاً بلا إعادة تشغيل.
-function startLoadMonitor() {
-    if (loadTimer !== null || !Native) return;
-    highStreak = 0; lowStreak = 0;
-    loadTimer = setInterval(sampleLoad, 30_000);
-}
-
-function stopLoadMonitor() {
-    if (loadTimer !== null) { clearInterval(loadTimer); loadTimer = null; }
-    highStreak = 0; lowStreak = 0;
-    autoByLoad = false;
-}
-
 // ── التفعيل والإيقاف (كل شيء تلقائي) ──
 async function applyMode() {
     if (active) return;
     active = true;
     notifiedManualOff = false; // أُعيد التفعيل ⇒ نسمح بإعلامٍ جديد لاحقاً إن أُوقف يدوياً مرة أخرى
     applyCss();
-    applyRuntimeOpts();
     await applyUserSettings();
     if (settings.store.changeProcessPriority) await setPriority("belowNormal");
     if (settings.store.cleanCacheOnStart) await cleanCache();
@@ -287,7 +172,6 @@ async function revertMode() {
     if (!active) return;
     active = false;
     removeCss();
-    removeRuntimeOpts();
     await revertUserSettings();
     if (settings.store.changeProcessPriority) await setPriority("normal");
     refreshButtons();
@@ -295,7 +179,6 @@ async function revertMode() {
 }
 
 function toggle() {
-    autoByLoad = false; // تدخّل يدوي ⇒ مراقب الحمل لا يملك عكس هذه الحالة تلقائياً
     if (active) {
         revertMode();
         manualOff = true;  // إيقاف يدوي ⇒ يطغى على الكشف التلقائي حتى تُفعّله بنفسك
@@ -334,7 +217,7 @@ function PerfHeaderButton() {
 
 export default definePlugin({
     name: "PerformanceBoost",
-    description: "Game/performance mode: reduces animations, compacts messages, stops GIFs, lowers process priority, cleans cache, and applies runtime speedups (spring skip, passive listeners, lazy images, memory-freeing) — all revertible. (Hardware acceleration requires one-time manual toggle + restart.)",
+    description: "Game/performance mode: automatically reduces animations, compacts messages, stops GIFs, lowers process priority, and cleans cache — all revertible. (Hardware acceleration requires one-time manual toggle + restart.)",
     authors: [EquicordDevs.LOSTSTR],
     tags: ["Utility"],
     dependencies: ["HeaderBarAPI"],
@@ -371,12 +254,9 @@ export default definePlugin({
         // نفتح الكشف الحيّ عند CONNECTION_OPEN (انظر flux أعلاه)، مع مهلة احتياطية 15ث إن لم يصل الحدث —
         // فلا يُفعَّل الوضع تلقائياً عند فتح Discord ولعبة شغّالة.
         readyFallbackTimer = setTimeout(markReady, 15000);
-        startLoadMonitor(); // مراقب الحمل الاختياري (لا يفعل شيئاً ما دام autoHighLoad مُطفأً)
     },
     stop() {
-        stopLoadMonitor();
         revertMode();
-        removeRuntimeOpts(); // ضمان عكس رقعة addEventListener حتى لو لم يكن الوضع مفعّلاً (بلا تسريب)
         // ننظّف المهلة الاحتياطية ونُعيد ضبط الحالة لإعادة تفعيل نظيفة لاحقاً.
         if (readyFallbackTimer !== null) {
             clearTimeout(readyFallbackTimer);

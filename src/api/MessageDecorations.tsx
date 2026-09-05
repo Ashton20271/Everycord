@@ -58,18 +58,15 @@ export function removeMessageDecoration(identifier: string) {
     decorationsFactories.delete(identifier);
 }
 
-export function __addDecorationsToMessage(props: MessageDecorationProps): JSX.Element | null {
-    if (decorationsFactories.size === 0) return null;
-
-    const decorations: JSX.Element[] = [];
-
-    for (const [key, Decoration] of decorationsFactories) {
-        decorations.push(
+export function __addDecorationsToMessage(props: MessageDecorationProps): JSX.Element {
+    const decorations = Array.from(
+        decorationsFactories.entries(),
+        ([key, Decoration]) => (
             <ErrorBoundary noop message={`Failed to render ${key} Message Decoration`} key={key}>
                 <Decoration {...props} />
             </ErrorBoundary>
-        );
-    }
+        )
+    );
 
     return (
         <div className="vc-message-decorations-wrapper">

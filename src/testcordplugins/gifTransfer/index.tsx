@@ -8,7 +8,6 @@ import { definePluginSettings } from "@api/Settings";
 import { Link } from "@components/Link";
 import { TestcordDevs } from "@utils/constants";
 import { Logger } from "@utils/Logger";
-import { sleep } from "@utils/misc";
 import definePlugin, { OptionType } from "@utils/types";
 import type { ModuleFactory } from "@vencord/discord-types/webpack";
 import { findByPropsLazy, wreq } from "@webpack";
@@ -110,6 +109,10 @@ function getAddGifFn(): ((gif: any) => void) | null {
             UserSettingsDelay?.INFREQUENT_USER_ACTION ?? 3
         );
     };
+}
+
+function sleep(ms: number): Promise<void> {
+    return new Promise(r => setTimeout(r, ms));
 }
 
 // ─── Runtime limit lift (no restart) ──────────────────────────────────────────
@@ -456,25 +459,24 @@ function tryInject(): void {
     }
 }
 
-let injectTimer: ReturnType<typeof setTimeout> | null = null;
-let pollInterval: ReturnType<typeof setInterval> | null = null;
+let observer: MutationObserver | null = null;
 
 function startObserver(): void {
-    pollInterval = setInterval(() => {
-        tryInject();
-    }, 1000);
+    let injectTimer: ReturnType<typeof setTimeout> | null = null;
+    observer = new MutationObserver(() => {
+        if (injectTimer) return;
+        injectTimer = setTimeout(() => {
+            injectTimer = null;
+            tryInject();
+        }, 300);
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
     tryInject();
 }
 
 function stopObserver(): void {
-    if (injectTimer) {
-        clearTimeout(injectTimer);
-        injectTimer = null;
-    }
-    if (pollInterval) {
-        clearInterval(pollInterval);
-        pollInterval = null;
-    }
+    observer?.disconnect();
+    observer = null;
     document.querySelectorAll(`#${BUTTONS_ID}`).forEach(el => el.remove());
 }
 
@@ -489,10 +491,16 @@ export default definePlugin({
 
     patches: [
         {
-            find: "toBinary(t).length>",
-            noWarn: true,
+            find: "toBinary(t).length>762880",
             replacement: {
-                match: /\.toBinary\(\i\)\.length>\d+/,
+                match: /\.toBinary\(t\)\.length>762880/,
+                replace: ".toBinary(t).length>Number.MAX_SAFE_INTEGER",
+            }
+        },
+        {
+            find: "toBinary(t).length>",
+            replacement: {
+                match: /\.toBinary\(t\)\.length>\d+/,
                 replace: ".toBinary(t).length>Number.MAX_SAFE_INTEGER",
             }
         },

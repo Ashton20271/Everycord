@@ -3,9 +3,9 @@
 Typings for OpenCord's api, published to npm
 
 ```sh
-npm i @everycord/types
+npm i @opencord/types
 
-yarn add @everycord/types
+yarn add @opencord/types
 
-pnpm add @everycord/types
+pnpm add @opencord/types
 ```

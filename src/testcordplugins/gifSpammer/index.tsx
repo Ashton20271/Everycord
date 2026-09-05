@@ -8,11 +8,11 @@ import { ApplicationCommandInputType, ApplicationCommandOptionType, sendBotMessa
 import { TestcordDevs } from "@utils/constants";
 import { sendMessage } from "@utils/discord";
 import { Logger } from "@utils/Logger";
-import { sleep } from "@utils/misc";
 import definePlugin from "@utils/types";
-import { UserSettingsProtoStore } from "@webpack/common";
+import { findByPropsLazy } from "@webpack";
 
 const logger = new Logger("GifSpammer");
+const FavoritesStore = findByPropsLazy("getGIFFavorites", "getFavorites");
 
 export default definePlugin({
     name: "GifSpammer",
@@ -39,8 +39,7 @@ export default definePlugin({
 
                 let favs: any[] = [];
                 try {
-                    const gifs = UserSettingsProtoStore.frecencyWithoutFetchingLatest?.favoriteGifs?.gifs ?? {};
-                    favs = Object.values(gifs).map(g => ({ url: (g as any).src, src: (g as any).src }));
+                    favs = FavoritesStore.getGIFFavorites?.() ?? FavoritesStore.getFavorites?.() ?? [];
                 } catch (e) {
                     logger.error("Failed to get favorites", e);
                     sendBotMessage(ctx.channel.id, { content: "? Could not get your favorite GIFs." });
@@ -66,7 +65,7 @@ export default definePlugin({
                     }
 
                     if (i < favs.length - 1) {
-                        await sleep(delay);
+                        await new Promise(resolve => setTimeout(resolve, delay));
                     }
                 }
 

@@ -8,7 +8,6 @@ import { definePluginSettings } from "@api/Settings";
 import { BaseText } from "@components/BaseText";
 import { Button } from "@components/Button";
 import { Card } from "@components/Card";
-import ErrorBoundary from "@components/ErrorBoundary";
 import { Flex } from "@components/Flex";
 import { Logger } from "@utils/Logger";
 import definePlugin, { OptionType } from "@utils/types";
@@ -21,10 +20,8 @@ const DEFAULT_BACKGROUND_PRELOADS = 3;
 const DEFAULT_BACKGROUND_PRELOAD_LIMIT = 250;
 const DEFAULT_RETRY_COUNT = 2;
 const LOAD_SLOT_TIMEOUT_MS = 12000;
-const BACKGROUND_PRELOAD_TIMEOUT_MS = 12000;
 const RETRY_DELAY_MS = 650;
 const STATS_REFRESH_MS = 1000;
-const SEEN_PREVIEW_LIMIT = 2000;
 const TRANSPARENT_IMAGE_SRC = "data:image/gif;base64,R0lGODlhAQABAAAAACw=";
 const RETRY_PARAM = "fast_gif_retry";
 const GIF_EXTENSION_RE = /\.gif(?:$|[?#])/i;
@@ -79,14 +76,12 @@ interface LoadQueueEntry {
     start: () => void;
 }
 
-type PreviewLoadListener = (loaded: boolean) => void;
-
 const previewUrlCache = new Map<string, string>();
 const loadedPreviewUrls = new Set<string>();
-const previewLoadListeners = new Map<string, Set<PreviewLoadListener>>();
+const previewLoadListeners = new Map<string, Set<() => void>>();
 const backgroundPreloadQueued = new Set<string>();
 const backgroundPreloadQueue: string[] = [];
-const backgroundPreloadImages = new Map<HTMLImageElement, ReturnType<typeof setTimeout>>();
+const backgroundPreloadImages = new Set<HTMLImageElement>();
 const loadQueue: LoadQueueEntry[] = [];
 const seenOriginalSrcs = new Set<string>();
 const stats: FastGifStats = {
@@ -118,11 +113,6 @@ const statItems = [
     { label: "Active preload", value: "activeBackgroundPreloads" },
     { label: "Queued preload", value: "queuedBackgroundPreloads" }
 ] as const satisfies readonly { label: string; value: keyof FastGifStatsSnapshot; }[];
-const GIF_IMAGE_SETTING_KEYS = [
-    "preloadAllInBackground",
-    "previewMode",
-    "rememberLoadedPreviews"
-] satisfies ("preloadAllInBackground" | "previewMode" | "rememberLoadedPreviews")[];
 
 let activeLoads = 0;
 let activeBackgroundPreloads = 0;
@@ -134,7 +124,6 @@ function clearCaches() {
     loadedPreviewUrls.clear();
     backgroundPreloadQueued.clear();
     backgroundPreloadQueue.length = 0;
-    cancelBackgroundPreloads();
 }
 
 function bumpStat(stat: keyof FastGifStats, by = 1) {
@@ -145,11 +134,6 @@ function recordSeenPreview(src: string) {
     if (!src || seenOriginalSrcs.has(src)) return;
 
     seenOriginalSrcs.add(src);
-    if (seenOriginalSrcs.size > SEEN_PREVIEW_LIMIT) {
-        const oldest = seenOriginalSrcs.values().next().value;
-        if (oldest) seenOriginalSrcs.delete(oldest);
-    }
-
     bumpStat("seenPreviews");
 }
 
@@ -192,8 +176,7 @@ const settings = definePluginSettings({
         description: "How many GIF previews may load at the same time.",
         markers: [2, 4, 6, 8, 10, 12],
         default: DEFAULT_CONCURRENT_LOADS,
-        stickToMarkers: true,
-        onChange: () => pumpLoadQueue()
+        stickToMarkers: true
     },
     retryCount: {
         type: OptionType.SLIDER,
@@ -205,14 +188,7 @@ const settings = definePluginSettings({
     preloadAllInBackground: {
         type: OptionType.BOOLEAN,
         description: "Preload every GIF preview the picker knows about in the background.",
-        default: false,
-        onChange: enabled => {
-            if (enabled) return;
-
-            backgroundPreloadQueued.clear();
-            backgroundPreloadQueue.length = 0;
-            cancelBackgroundPreloads();
-        }
+        default: false
     },
     preloadFavoritesOnStart: {
         type: OptionType.BOOLEAN,
@@ -225,8 +201,7 @@ const settings = definePluginSettings({
         description: "How many background GIF previews may preload at the same time.",
         markers: [1, 2, 3, 4, 6, 8, 10, 12],
         default: DEFAULT_BACKGROUND_PRELOADS,
-        stickToMarkers: true,
-        onChange: () => pumpBackgroundPreloads()
+        stickToMarkers: true
     },
     backgroundPreloadLimit: {
         type: OptionType.SLIDER,
@@ -242,7 +217,7 @@ const settings = definePluginSettings({
     },
     statsPanel: {
         type: OptionType.COMPONENT,
-        component: ErrorBoundary.wrap(StatsPanel, { noop: true })
+        component: StatsPanel
     }
 });
 
@@ -259,7 +234,7 @@ export default definePlugin({
             replacement: [
                 {
                     match: /this\.renderGIF\(\)/,
-                    replace: "$self.renderOptimizedGif(()=>this.renderGIF())"
+                    replace: "$self.renderOptimizedGif(this,()=>this.renderGIF())"
                 },
                 {
                     match: /(,suggestions:)(\i)(,favorites:)(\i),/,
@@ -281,6 +256,7 @@ export default definePlugin({
         }
 
         activeLoads = 0;
+        activeBackgroundPreloads = 0;
         clearCaches();
         previewLoadListeners.clear();
 
@@ -289,9 +265,10 @@ export default definePlugin({
         }
 
         loadQueue.length = 0;
+        backgroundPreloadImages.clear();
     },
 
-    renderOptimizedGif(renderGif: () => ReactNode) {
+    renderOptimizedGif(_instance: unknown, renderGif: () => ReactNode) {
         return optimizeNode(renderGif());
     },
 
@@ -388,7 +365,7 @@ function optimizeNode(node: ReactNode): ReactNode {
     const { children, src } = props;
 
     if (typeof src === "string" && shouldOptimizeSrc(src)) {
-        return <SafeOptimizedGifImage key={node.key ?? undefined} element={node} />;
+        return <OptimizedGifImage key={node.key ?? undefined} element={node} />;
     }
 
     if (children == null) return node;
@@ -415,8 +392,7 @@ function OptimizedGifImage({ element }: { element: GifReactElement; }) {
     const props = element.props as GifImageProps;
     const { onError, onLoad, onMouseEnter, onMouseLeave, src } = props;
     const originalSrc = typeof src === "string" ? src : "";
-    const imageSettings = settings.use(GIF_IMAGE_SETTING_KEYS);
-    const previewMode = imageSettings.previewMode as PreviewMode;
+    const previewMode = getPreviewMode();
     const hoverMode = previewMode === "hover";
     const [canLoad, setCanLoad] = useState(false);
     const [attempt, setAttempt] = useState(0);
@@ -433,11 +409,6 @@ function OptimizedGifImage({ element }: { element: GifReactElement; }) {
     const imageSrc = canLoad ? getRetrySrc(baseSrc, attempt) : TRANSPARENT_IMAGE_SRC;
 
     useEffect(() => {
-        if (retryTimerRef.current) {
-            clearTimeout(retryTimerRef.current);
-            retryTimerRef.current = undefined;
-        }
-
         recordSeenPreview(originalSrc);
         setAttempt(0);
         setUseOriginal(false);
@@ -446,46 +417,39 @@ function OptimizedGifImage({ element }: { element: GifReactElement; }) {
     useEffect(() => {
         setCanLoad(false);
 
-        if (imageSettings.rememberLoadedPreviews && loadedPreviewUrls.has(baseSrc)) {
+        if (settings.store.rememberLoadedPreviews && loadedPreviewUrls.has(baseSrc)) {
             bumpStat("cacheHits");
             setCanLoad(true);
-            return;
+            return () => releaseRef.current?.();
         }
 
         let timeout: ReturnType<typeof setTimeout> | undefined;
-        const startVisibleLoad = () => {
-            releaseLoadSlot(releaseRef);
-            releaseRef.current = acquireLoadSlot(() => {
-                setCanLoad(true);
-                timeout = setTimeout(() => releaseLoadSlot(releaseRef), LOAD_SLOT_TIMEOUT_MS);
-            });
-        };
-        let unsubscribe: (() => void) | undefined;
-
-        if (imageSettings.preloadAllInBackground && !useOriginal && attempt === 0) {
-            unsubscribe = subscribePreviewLoad(baseSrc, loaded => {
-                if (loaded) {
-                    setCanLoad(true);
-                    return;
-                }
-
-                startVisibleLoad();
-            });
-            queueBackgroundPreload(baseSrc);
-        } else {
-            startVisibleLoad();
-        }
+        releaseRef.current = acquireLoadSlot(() => {
+            setCanLoad(true);
+            timeout = setTimeout(() => releaseLoadSlot(releaseRef), LOAD_SLOT_TIMEOUT_MS);
+        });
 
         return () => {
-            unsubscribe?.();
-            if (retryTimerRef.current) {
-                clearTimeout(retryTimerRef.current);
-                retryTimerRef.current = undefined;
-            }
             if (timeout) clearTimeout(timeout);
             releaseLoadSlot(releaseRef);
         };
-    }, [baseSrc, attempt, useOriginal, imageSettings.preloadAllInBackground, imageSettings.rememberLoadedPreviews]);
+    }, [baseSrc, attempt]);
+
+    useEffect(() => {
+        if (!settings.store.preloadAllInBackground) return;
+
+        const unsubscribe = subscribePreviewLoad(baseSrc, () => {
+            releaseLoadSlot(releaseRef);
+            setCanLoad(true);
+        });
+
+        queueBackgroundPreload(baseSrc);
+        return unsubscribe;
+    }, [baseSrc]);
+
+    useEffect(() => () => {
+        if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+    }, []);
 
     const nextProps = Object.assign({}, props, {
         decoding: props.decoding ?? "async",
@@ -495,16 +459,6 @@ function OptimizedGifImage({ element }: { element: GifReactElement; }) {
 
             releaseLoadSlot(releaseRef);
 
-            if (attempt < getRetryCount()) {
-                bumpStat("retryAttempts");
-                if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
-                retryTimerRef.current = setTimeout(() => {
-                    retryTimerRef.current = undefined;
-                    setAttempt(value => value + 1);
-                }, RETRY_DELAY_MS);
-                return;
-            }
-
             if (!useOriginal && baseSrc !== originalSrc) {
                 bumpStat("originalFallbacks");
                 setUseOriginal(true);
@@ -512,15 +466,18 @@ function OptimizedGifImage({ element }: { element: GifReactElement; }) {
                 return;
             }
 
-            onError?.(event);
+            if (attempt >= getRetryCount()) {
+                onError?.(event);
+                return;
+            }
+
+            bumpStat("retryAttempts");
+            retryTimerRef.current = setTimeout(() => {
+                setAttempt(value => value + 1);
+            }, RETRY_DELAY_MS);
         },
         onLoad: (event: SyntheticEvent<HTMLElement>) => {
             if (imageSrc === TRANSPARENT_IMAGE_SRC) return;
-
-            if (retryTimerRef.current) {
-                clearTimeout(retryTimerRef.current);
-                retryTimerRef.current = undefined;
-            }
 
             bumpStat("loadedPreviews");
             rememberLoadedUrl(baseSrc);
@@ -544,8 +501,6 @@ function OptimizedGifImage({ element }: { element: GifReactElement; }) {
 
     return createElement(element, nextProps);
 }
-
-const SafeOptimizedGifImage = ErrorBoundary.wrap(OptimizedGifImage, { noop: true });
 
 function createElement(element: GifReactElement, props: Record<string, unknown>) {
     const nextProps = Object.assign({}, props);
@@ -697,7 +652,7 @@ function rememberLoadedUrl(src: string) {
     const listeners = previewLoadListeners.get(src);
     if (listeners) {
         previewLoadListeners.delete(src);
-        for (const listener of listeners) listener(true);
+        for (const listener of listeners) listener();
     }
 
     if (loadedPreviewUrls.size <= PREVIEW_CACHE_LIMIT) return;
@@ -706,9 +661,9 @@ function rememberLoadedUrl(src: string) {
     if (oldest) loadedPreviewUrls.delete(oldest);
 }
 
-function subscribePreviewLoad(src: string, listener: PreviewLoadListener) {
+function subscribePreviewLoad(src: string, listener: () => void) {
     if (loadedPreviewUrls.has(src)) {
-        listener(true);
+        listener();
         return () => { };
     }
 
@@ -745,12 +700,7 @@ function preloadImage(src: string) {
 
     const image = new Image();
     const finish = (loaded: boolean) => {
-        const timeout = backgroundPreloadImages.get(image);
-        if (timeout === undefined) return;
-
-        clearTimeout(timeout);
         backgroundPreloadImages.delete(image);
-        backgroundPreloadQueued.delete(src);
         activeBackgroundPreloads = Math.max(0, activeBackgroundPreloads - 1);
 
         if (loaded) {
@@ -758,11 +708,6 @@ function preloadImage(src: string) {
             rememberLoadedUrl(src);
         } else {
             bumpStat("backgroundFailed");
-            const listeners = previewLoadListeners.get(src);
-            if (listeners) {
-                previewLoadListeners.delete(src);
-                for (const listener of listeners) listener(false);
-            }
         }
 
         pumpBackgroundPreloads();
@@ -771,20 +716,8 @@ function preloadImage(src: string) {
     image.decoding = "async";
     image.onload = () => finish(true);
     image.onerror = () => finish(false);
-    backgroundPreloadImages.set(image, setTimeout(() => finish(false), BACKGROUND_PRELOAD_TIMEOUT_MS));
+    backgroundPreloadImages.add(image);
     image.src = src;
-}
-
-function cancelBackgroundPreloads() {
-    for (const [image, timeout] of backgroundPreloadImages) {
-        clearTimeout(timeout);
-        image.onload = null;
-        image.onerror = null;
-        image.src = TRANSPARENT_IMAGE_SRC;
-    }
-
-    backgroundPreloadImages.clear();
-    activeBackgroundPreloads = 0;
 }
 
 function getGifSrc(gif: GifData) {

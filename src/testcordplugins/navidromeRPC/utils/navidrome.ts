@@ -14,23 +14,7 @@ const currentlyActiveStartTime: {
     minutes?: string;
     timestamp?: number;
 } = {};
-const ALBUM_ART_CACHE_MAX = 200;
-const ALBUM_ART_CACHE_BYTES = 256_000;
-const albumArtCache = new Map<string, string>();
-
-function setAlbumArtCache(id: string, art: string) {
-    albumArtCache.delete(id);
-    albumArtCache.set(id, art);
-
-    let bytes = 0;
-    for (const value of albumArtCache.values()) bytes += value.length;
-    while (albumArtCache.size > ALBUM_ART_CACHE_MAX || bytes > ALBUM_ART_CACHE_BYTES) {
-        const oldest = albumArtCache.keys().next().value;
-        if (!oldest) break;
-        bytes -= albumArtCache.get(oldest)?.length ?? 0;
-        albumArtCache.delete(oldest);
-    }
-}
+const albumArtCache: Record<string, string> = {};
 
 export async function req(endpoint: string): Promise<any> {
     if (!settings.store.isLoggedIn) throw new Error("NavidromeRPC: Not logged in");
@@ -71,12 +55,12 @@ export async function getNowPlayingTrack(): Promise<NowPlayingTrack> {
 
     const entry = entriesBelongingToSelf[0];
 
-    let art = albumArtCache.get(entry.id) || "";
+    let art = albumArtCache[entry.id] || "";
     try {
         if (!art) {
             const lastFMRequest: any = await (await fetch(`https://ws.audioscrobbler.com/2.0/?method=album.getinfo&api_key=feff915bf5987580c9dc354d523dc6b9&artist=${encodeURIComponent(entry.albumArtists[0].name)}&album=${encodeURIComponent(entry.album)}&format=json`)).json();
             art = lastFMRequest.album.image.at(-1)?.["#text"] || "";
-            setAlbumArtCache(entry.id, art);
+            albumArtCache[entry.id] = art;
         }
     } catch { }
 

@@ -364,10 +364,6 @@ export default definePlugin({
                 );
 
                 userCooldowns.set(message.author.id, now);
-                if (userCooldowns.size > 1000) {
-                    const keys = Array.from(userCooldowns.keys()).slice(0, 200);
-                    for (const k of keys) userCooldowns.delete(k);
-                }
                 channelCooldowns.set(message.channel_id, now);
                 pruneRateLimitEntries(now);
                 sentReplyTimestamps.push(now);

@@ -42,22 +42,20 @@ export function removeMemberListDecorator(identifier: string) {
     decoratorsFactories.delete(identifier);
 }
 
-export function __getDecorators(props: DecoratorProps, type: "guild" | "dm"): JSX.Element | null {
-    if (decoratorsFactories.size === 0) return null;
+export function __getDecorators(props: DecoratorProps, type: "guild" | "dm"): JSX.Element {
+    const decorators = Array.from(
+        decoratorsFactories.entries(),
+        ([key, { render: Decorator, onlyIn }]) => {
+            if ((onlyIn === "guilds" && type !== "guild") || (onlyIn === "dms" && type !== "dm"))
+                return null;
 
-    const decorators: JSX.Element[] = [];
-
-    for (const [key, { render: Decorator, onlyIn }] of decoratorsFactories) {
-        if ((onlyIn === "guilds" && type !== "guild") || (onlyIn === "dms" && type !== "dm")) continue;
-
-        decorators.push(
-            <ErrorBoundary noop key={key} message={`Failed to render ${key} Member List Decorator`}>
-                <Decorator {...props} type={type} />
-            </ErrorBoundary>
-        );
-    }
-
-    if (decorators.length === 0) return null;
+            return (
+                <ErrorBoundary noop key={key} message={`Failed to render ${key} Member List Decorator`}>
+                    <Decorator {...props} type={type} />
+                </ErrorBoundary>
+            );
+        }
+    );
 
     return (
         <div className="vc-member-list-decorators-wrapper">

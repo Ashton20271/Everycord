@@ -219,11 +219,13 @@ function mergeUser(base: any, overrides: Record<string, unknown>): any {
 }
 
 function useUserAvatarDecoration(user: User) {
+    logger.info("[DECO] useUserAvatarDecoration called", { userId: user?.id, isActive: isActive(), isCurrent: isCurrentUser(user?.id) });
     if (!isActive()) return undefined;
     if (!isCurrentUser(user?.id)) return undefined;
     const t = getTargetUser() as any;
     const manual = getCachedTarget()?.manualProfile;
     const decoAsset = t?.avatarDecorationData?.asset || manual?.avatarDecoration || manual?.decorationAsset;
+    logger.info("[DECO] useUserAvatarDecoration resolved", { targetAsset: t?.avatarDecorationData?.asset, manualDeco: manual?.avatarDecoration, manualDecoAsset: manual?.decorationAsset, resolved: decoAsset });
     if (!decoAsset) return undefined;
     return {
         asset: decoAsset,
@@ -233,32 +235,25 @@ function useUserAvatarDecoration(user: User) {
 }
 
 let cachedWrap: { base: any; target: any; wrap: any; } | null = null;
-let wrapping = false;
 
 function wrapUser(base: any): any {
     const target = getTargetUser();
     if (!base || !target || !isActive()) return base;
-    if (wrapping) return base;
     if (cachedWrap && cachedWrap.base === base && cachedWrap.target === target) return cachedWrap.wrap;
-    wrapping = true;
+    const wrap = mergeUser(base, buildOverrides(target));
     try {
-        const wrap = mergeUser(base, buildOverrides(target));
-        try {
-            const manual = getCachedTarget()?.manualProfile;
-            const createdAt = manual?.createdAt
-                ? new Date(manual.createdAt + "T12:00:00Z")
-                : new Date(SnowflakeUtils.extractTimestamp(target.id));
-            Object.defineProperty(wrap, "createdAt", {
-                get() { return createdAt; },
-                enumerable: true,
-                configurable: true,
-            });
-        } catch { /* ignore */ }
-        cachedWrap = { base, target, wrap };
-        return wrap;
-    } finally {
-        wrapping = false;
-    }
+        const manual = getCachedTarget()?.manualProfile;
+        const createdAt = manual?.createdAt
+            ? new Date(manual.createdAt + "T12:00:00Z")
+            : new Date(SnowflakeUtils.extractTimestamp(target.id));
+        Object.defineProperty(wrap, "createdAt", {
+            get() { return createdAt; },
+            enumerable: true,
+            configurable: true,
+        });
+    } catch { /* ignore */ }
+    cachedWrap = { base, target, wrap };
+    return wrap;
 }
 
 function clearWrapCache() {
@@ -276,7 +271,6 @@ let originalGetFormattedName: typeof UsernameUtils.getFormattedName | null = nul
 let originalGetUserTag: typeof UsernameUtils.getUserTag | null = null;
 let originalUseName: typeof UsernameUtils.useName | null = null;
 let originalUseUserTag: typeof UsernameUtils.useUserTag | null = null;
-let originalExtractTimestamp: typeof SnowflakeUtils.extractTimestamp | null = null;
 let originalGetStatus: typeof PresenceStore.getStatus | null = null;
 let originalGetClientStatus: typeof PresenceStore.getClientStatus | null = null;
 let originalGetActivities: typeof PresenceStore.getActivities | null = null;
@@ -400,21 +394,6 @@ function patchUtils() {
         }
         return originalUseUserTag!.call(this, user, options);
     };
-
-    originalExtractTimestamp = SnowflakeUtils.extractTimestamp;
-    SnowflakeUtils.extractTimestamp = function (id: string) {
-        if (isActive() && isCurrentUser(id)) {
-            const manual = getCachedTarget()?.manualProfile;
-            if (manual?.createdAt) {
-                return new Date(manual.createdAt + "T12:00:00Z").getTime();
-            }
-            const target = getTargetUser();
-            if (target && target.id !== id) {
-                return originalExtractTimestamp!.call(this, target.id);
-            }
-        }
-        return originalExtractTimestamp!.call(this, id);
-    };
 }
 
 function unpatchUtils() {
@@ -427,7 +406,6 @@ function unpatchUtils() {
     if (originalGetUserTag) UsernameUtils.getUserTag = originalGetUserTag;
     if (originalUseName) UsernameUtils.useName = originalUseName;
     if (originalUseUserTag) UsernameUtils.useUserTag = originalUseUserTag;
-    if (originalExtractTimestamp) SnowflakeUtils.extractTimestamp = originalExtractTimestamp;
     utilsPatched = false;
 }
 
@@ -563,7 +541,7 @@ function FakeUserProfileIcon({ className, style }: { className?: string; style?:
 
 function FakeUserProfileButton({ iconForeground, hideTooltips, nameplate }: UserAreaRenderProps) {
     const [, force] = React.useReducer(x => x + 1, 0);
-    React.useEffect(() => { return subscribe(() => force()); }, []);
+    React.useEffect(() => subscribe(() => force()), []);
 
     const target = getCachedTarget();
     const active = isActive();
@@ -837,7 +815,6 @@ export default definePlugin({
     patches: [
         {
             find: ",getUserTag:",
-            noWarn: true,
             replacement: {
                 match: /if\(\i\((\i)\.global_name\)\)return(?=.{0,100}return"\?\?\?")/,
                 replace: "const vcFupName=$self.getUsername($1);if(vcFupName)return vcFupName;$&"
@@ -845,7 +822,6 @@ export default definePlugin({
         },
         {
             find: "getUserAvatarURL:",
-            noWarn: true,
             replacement: {
                 match: /(getUserAvatarURL:)(\i),/,
                 replace: "$1$self.wrapAvatar($2),"
@@ -853,7 +829,6 @@ export default definePlugin({
         },
         {
             find: "getAvatarDecorationURL:",
-            noWarn: true,
             replacement: {
                 match: /(?<=function \i\(\i\){)(?=let{avatarDecoration)/,
                 replace: "const vcFupDeco=$self.getAvatarDecorationURL(arguments[0]);if(vcFupDeco)return vcFupDeco;"
@@ -861,15 +836,20 @@ export default definePlugin({
         },
         {
             find: "UserProfileStore",
-            noWarn: true,
             replacement: {
                 match: /(?<=getUserProfile\(\i\){return )(.+?)(?=})/,
-                replace: "$self.profileHook(arguments[0],$1)"
+                replace: "($self.logProfileCall(arguments[0]),$self.profileHook(arguments[0],$1))"
+            }
+        },
+        {
+            find: ".banner)==null",
+            replacement: {
+                match: /(?<=void 0:)\i\.getPreviewBanner\(\i,\i,\i\)/,
+                replace: "($self.bannerHook(arguments[0])??($&))"
             }
         },
         {
             find: ":\"SHOULD_LOAD\");",
-            noWarn: true,
             replacement: {
                 match: /\i(?:\?)?\.getPreviewBanner\(\i,\i,\i\)(?=.{0,100}"COMPLETE")/,
                 replace: "($self.bannerHook(arguments[0])??($&))"
@@ -878,7 +858,6 @@ export default definePlugin({
         {
             find: "isAvatarDecorationAnimating:",
             group: true,
-            noWarn: true,
             replacement: [
                 {
                     match: /(?<=\.avatarDecoration,guildId:\i\}\)\),)(?<=user:(\i).+?)/,
@@ -895,7 +874,7 @@ export default definePlugin({
             ]
         },
         {
-            find: "renderNameTag",
+            find: "#{intl::ACCOUNT_SPEAKING_WHILE_MUTED}",
             replacement: [
                 {
                     match: /(?<=\i\)\({avatarDecoration:)\i(?=,)(?<=currentUser:(\i).+?)/,
@@ -903,11 +882,19 @@ export default definePlugin({
                 }
             ]
         },
+        {
+            find: "\"ProfileEffectStore\"",
+            replacement: {
+                match: /getProfileEffectById\((\i)\){return null!=\i\?(\i)\[\i\]:void 0/,
+                replace: "getProfileEffectById($1){return $self.getProfileEffectById($1,$2)??(null!=$2?$2[$1]:void 0)"
+            }
+        },
         ...[
+            '"Message Username"',
+            ".nameplatePreview,{",
             "#{intl::ayozFl::raw}",
         ].map(find => ({
             find,
-            noWarn: true,
             replacement: [
                 {
                     match: /(\i)\.length>0\?void 0:(\i)\.avatarDecoration/,
@@ -916,8 +903,20 @@ export default definePlugin({
             ]
         })),
         {
-            find: "avatarDecorationPreview",
-            noWarn: true,
+            find: "80,onlyAnimateOnHoverOrFocus:!",
+            replacement: [
+                {
+                    match: /(?<==)\i=>{let{children.{20,200}isSelected:\i.{0,5}\}=\i/,
+                    replace: "$self.DecorationGridItem=$&",
+                },
+                {
+                    match: /(?<==)\i=>{let{user:\i,avatarDecoration/,
+                    replace: "$self.DecorationGridDecoration=$&",
+                },
+            ]
+        },
+        {
+            find: "#{intl::PREMIUM_UPSELL_PROFILE_AVATAR_DECO_INLINE_UPSELL_DESCRIPTION}",
             replacement: [
                 {
                     match: /(?<==)\i=>{let{user:\i,guildId:\i,avatarDecoration:/,
@@ -935,6 +934,14 @@ export default definePlugin({
     },
 
     useUserAvatarDecoration,
+
+    getProfileEffectById(skuId: string, effects: Record<string, any>) {
+        if (!isActive() || !settings.store.spoofProfileEffect) return null;
+        const targetProfile = getTargetProfile();
+        const eff = targetProfile?.profileEffect;
+        if (eff && (eff.skuId === skuId || (eff as any).id === skuId)) return eff;
+        return (effects && effects[skuId]) || null;
+    },
 
     set DecorationGridItem(e: any) {
         DecorationGridItem = e;
@@ -962,23 +969,32 @@ export default definePlugin({
     },
 
     getAvatarDecorationURL(args: { user?: User; avatarDecoration?: any; canAnimate?: boolean; }) {
-        if (!isActive()) return undefined;
+        logger.info("[DECO] getAvatarDecorationURL called", args);
+        if (!isActive()) { logger.info("[DECO] inactive, bail"); return undefined; }
         const { user, avatarDecoration, canAnimate } = args ?? {};
         const t = getTargetUser() as any;
         const manual = getCachedTarget()?.manualProfile;
         const spoofedAsset = t?.avatarDecorationData?.asset || manual?.avatarDecoration || manual?.decorationAsset;
-        if (!spoofedAsset) return undefined;
+        logger.info("[DECO] resolved", { userId: user?.id, callerAsset: avatarDecoration?.asset, spoofedAsset, canAnimate });
+        if (!spoofedAsset) { logger.info("[DECO] no spoofed asset, bail"); return undefined; }
         const callerAsset: string | undefined = avatarDecoration?.asset;
         const isOurUser = user?.id != null && isCurrentUser(user.id);
         const isOurDecoration = callerAsset === spoofedAsset;
-        if (!isOurUser && !isOurDecoration) return undefined;
+        logger.info("[DECO] match", { isOurUser, isOurDecoration });
+        if (!isOurUser && !isOurDecoration) { logger.info("[DECO] not ours, bail"); return undefined; }
         const asset = canAnimate && spoofedAsset.startsWith("a_") ? spoofedAsset : spoofedAsset.replace(/^a_/, "");
         const passthrough = canAnimate && spoofedAsset.startsWith("a_") ? "" : "?passthrough=false";
         const url = `https://cdn.discordapp.com/avatar-decoration-presets/${asset}.png${passthrough}`;
+        logger.info("[DECO] returning URL", url);
         return url;
     },
 
+    logProfileCall(userId: string) {
+        logger.info("[DECO] getUserProfile patched call", { userId, isActive: isActive(), isCurrent: isCurrentUser(userId) });
+    },
+
     profileHook(userId: string, original: any) {
+        logger.info("[DECO] profileHook entry", { userId, isActive: isActive(), isCurrent: isCurrentUser(userId) });
         if (!isActive() || !isCurrentUser(userId)) return original;
         const targetProfile = getTargetProfile();
         const target = getTargetUser();
@@ -1063,7 +1079,7 @@ export default definePlugin({
         const target = getCachedTarget();
         if (!target) return;
 
-        const replyRef = options?.messageReference;
+        const replyRef = options?.replyOptions?.messageReference;
         const fake = buildFakeMessage(channelId, msg.content, replyRef);
         if (!fake) return;
 

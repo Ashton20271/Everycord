@@ -26,7 +26,6 @@ const vc = findStoreLazy("VoiceStateStore");
 const voiceshit = findByPropsLazy("getVoiceChannelId");
 const veryimportantmap = new Set<string>();
 let checkInterval: ReturnType<typeof setInterval> | null = null;
-let ownerCheckTimeout: ReturnType<typeof setTimeout> | null = null;
 
 const settings = definePluginSettings({
     guildidetectionslol: {
@@ -236,10 +235,6 @@ export default definePlugin({
                 clearInterval(checkInterval);
                 checkInterval = null;
             }
-            if (ownerCheckTimeout) {
-                clearTimeout(ownerCheckTimeout);
-                ownerCheckTimeout = null;
-            }
         } catch (e) {
             logger.error("Plugin stop error:", e);
         }
@@ -258,9 +253,7 @@ export default definePlugin({
 
                 // User joined a new VC or switched channels - trigger owner check notification
                 if (channelId && oldChannelId !== channelId) {
-                    if (ownerCheckTimeout) clearTimeout(ownerCheckTimeout);
-                    ownerCheckTimeout = setTimeout(() => {
-                        ownerCheckTimeout = null;
+                    setTimeout(() => {
                         checkvcownerlol(guildId, channelId);
                     }, 1000); // Small delay to ensure everything is loaded
                 }

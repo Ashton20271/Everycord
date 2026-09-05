@@ -107,7 +107,6 @@ const PLUGIN_NAME = "Client diagnostics";
 const ENTRY_KEY = "illegalcord_client_diagnostics";
 const SETTINGS_KEYS: SettingKey[] = ["sortBy", "showDisabled", "showApiPlugins", "refreshMs"];
 const REFRESH_SETTING_KEYS: SettingKey[] = ["refreshMs"];
-const MONITOR_SETTING_KEYS: SettingKey[] = ["showDisabled", "showApiPlugins", "refreshMs"];
 const LAG_NOTIFICATION_CHECK_MS = 30_000;
 const LAG_NOTIFICATION_COOLDOWN_MS = 10 * 60_000;
 const LAG_NOTIFICATION_MIN_COLLECTION_MS = 30_000;
@@ -116,7 +115,7 @@ const logger = new Logger("ClientDiagnostics");
 const GUIDE_ITEMS = [
     {
         label: "Impact",
-        description: "An internal score that combines per-minute CPU, slow calls, callback errors, net heap growth, and active resources with the worst observed spike. The higher it is, the more the plugin deserves attention."
+        description: "An internal score that combines CPU time, slow spikes, slow calls, async time, heap growth, and active resources. The higher it is, the more the plugin deserves attention."
     },
     {
         label: "CPU",
@@ -131,8 +130,8 @@ const GUIDE_ITEMS = [
         description: "Counts how many calls passed the slow call threshold configured in the plugin settings."
     },
     {
-        label: "Heap net",
-        description: "Shows positive JavaScript heap deltas minus observed decreases during plugin calls. It uses Chromium heap data, so it does not represent the full process RAM."
+        label: "Heap +",
+        description: "Shows how much extra JavaScript memory was observed during plugin calls. It uses Chromium heap data, so it does not represent the full process RAM."
     },
     {
         label: "Resources",
@@ -149,10 +148,6 @@ const GUIDE_ITEMS = [
     {
         label: "Max",
         description: "The slowest single call observed for that plugin."
-    },
-    {
-        label: "Errors",
-        description: "Counts measured callbacks and promises that failed. Repeated errors often identify a broken plugin even when its CPU use is low."
     }
 ] satisfies Array<{ label: string; description: string; }>;
 
@@ -167,7 +162,7 @@ const MONITOR_GUIDE_ITEMS = [
     },
     {
         label: "Extra RAM",
-        description: "Compares the plugin's observed net heap growth with the JavaScript heap currently in use."
+        description: "Compares the plugin's observed heap growth with the JavaScript heap currently in use."
     },
     {
         label: "RAM share",
@@ -217,8 +212,7 @@ const settings = definePluginSettings({
     lagNotifications: {
         type: OptionType.BOOLEAN,
         description: "Send a notification when a plugin may make Discord lag.",
-        default: true,
-        onChange: syncLagNotifications
+        default: true
     }
 });
 
@@ -242,39 +236,33 @@ let originalCancelAnimationFrame: typeof window.cancelAnimationFrame | undefined
 let originalAddEventListener: typeof EventTarget.prototype.addEventListener | undefined;
 let originalRemoveEventListener: typeof EventTarget.prototype.removeEventListener | undefined;
 let lagNotificationInterval: number | undefined;
-let pluginStarted = false;
 const lagNotificationTimes = new Map<string, number>();
-
-function createPluginStats(pluginName: string): PluginStats {
-    const now = Date.now();
-
-    return {
-        name: pluginName,
-        calls: 0,
-        totalMs: 0,
-        maxMs: 0,
-        slowCalls: 0,
-        asyncCalls: 0,
-        asyncMs: 0,
-        errors: 0,
-        heapIncrease: 0,
-        heapDecrease: 0,
-        lastHeapDelta: 0,
-        intervals: 0,
-        pendingTimeouts: 0,
-        animationFrames: 0,
-        listeners: 0,
-        firstSeen: now,
-        lastSeen: now,
-        surfaces: {}
-    };
-}
 
 function getPluginStats(pluginName: string) {
     let stat = stats.get(pluginName);
 
     if (!stat) {
-        stat = createPluginStats(pluginName);
+        const now = Date.now();
+        stat = {
+            name: pluginName,
+            calls: 0,
+            totalMs: 0,
+            maxMs: 0,
+            slowCalls: 0,
+            asyncCalls: 0,
+            asyncMs: 0,
+            errors: 0,
+            heapIncrease: 0,
+            heapDecrease: 0,
+            lastHeapDelta: 0,
+            intervals: 0,
+            pendingTimeouts: 0,
+            animationFrames: 0,
+            listeners: 0,
+            firstSeen: now,
+            lastSeen: now,
+            surfaces: {}
+        };
         stats.set(pluginName, stat);
     }
 
@@ -330,7 +318,7 @@ function recordCall(pluginName: string, surface: string, duration: number, faile
     }
 }
 
-function recordAsync(pluginName: string, surface: string, duration: number, failed: boolean) {
+function recordAsync(pluginName: string, surface: string, duration: number) {
     const stat = getPluginStats(pluginName);
     const surfaceStat = getSurfaceStats(stat, surface);
 
@@ -338,7 +326,6 @@ function recordAsync(pluginName: string, surface: string, duration: number, fail
     stat.asyncMs += duration;
     stat.lastSeen = Date.now();
     surfaceStat.asyncMs += duration;
-    if (failed) stat.errors++;
 }
 
 function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
@@ -383,16 +370,13 @@ function runMeasured<T>(pluginName: string, surface: string, callback: () => T):
 
     try {
         const result = callback();
+        failed = false;
 
         if (isPromiseLike(result)) {
             const asyncStart = performance.now();
-            void Promise.resolve(result).then(
-                () => recordAsync(pluginName, surface, performance.now() - asyncStart, false),
-                () => recordAsync(pluginName, surface, performance.now() - asyncStart, true)
-            );
+            void Promise.resolve(result).finally(() => recordAsync(pluginName, surface, performance.now() - asyncStart));
         }
 
-        failed = false;
         return result;
     } finally {
         activeStack.pop();
@@ -494,7 +478,6 @@ function instrumentPlugin(plugin: Plugin) {
     }
 
     wrapObjectMethod(pluginRecord, "audioProcessor", plugin.name, "audio processor");
-    wrapObjectMethod(pluginRecord, "gifPickerContextMenu", plugin.name, "GIF picker context menu");
 
     if (typeof plugin.toolboxActions === "function") {
         wrapObjectMethod(pluginRecord, "toolboxActions", plugin.name, "toolbox actions");
@@ -620,10 +603,7 @@ function installGlobalProbes() {
     }) as typeof window.setTimeout;
 
     window.clearTimeout = ((id?: number) => {
-        if (id !== undefined) {
-            forgetResource(timeoutOwners, id, "pendingTimeouts");
-            forgetResource(intervalOwners, id, "intervals");
-        }
+        if (id !== undefined) forgetResource(timeoutOwners, id, "pendingTimeouts");
         return originalClearTimeout!(id);
     }) as typeof window.clearTimeout;
 
@@ -644,10 +624,7 @@ function installGlobalProbes() {
     }) as typeof window.setInterval;
 
     window.clearInterval = ((id?: number) => {
-        if (id !== undefined) {
-            forgetResource(intervalOwners, id, "intervals");
-            forgetResource(timeoutOwners, id, "pendingTimeouts");
-        }
+        if (id !== undefined) forgetResource(intervalOwners, id, "intervals");
         return originalClearInterval!(id);
     }) as typeof window.clearInterval;
 
@@ -675,19 +652,7 @@ function installGlobalProbes() {
 
     EventTarget.prototype.addEventListener = function (type, listener, options) {
         const context = currentContext();
-        const optionObject = typeof options === "object" ? options : undefined;
-
-        if (context && listener && !optionObject?.signal?.aborted) {
-            if (optionObject?.once) {
-                rememberSourceSnippet(context.pluginName, `event listener ${type}`, `event listener ${type}`, getListenerSource(listener));
-            } else {
-                rememberListener(this, type, listener, context.pluginName, options);
-                if (optionObject?.signal) {
-                    const target = this;
-                    originalAddEventListener!.call(optionObject.signal, "abort", () => forgetListener(target, type, listener, options), { once: true });
-                }
-            }
-        }
+        if (context && listener) rememberListener(this, type, listener, context.pluginName, options);
         return originalAddEventListener!.call(this, type, listener, options);
     };
 
@@ -749,30 +714,14 @@ function getHotSurface(stat: PluginStats) {
     return surface ?? "No samples";
 }
 
-function getHeapGrowth(stat: PluginStats) {
-    return Math.max(0, stat.heapIncrease - stat.heapDecrease);
-}
-
-function hasMeasurements(stat: PluginStats) {
-    return stat.calls > 0 || stat.asyncCalls > 0 || stat.intervals > 0 || stat.pendingTimeouts > 0 || stat.animationFrames > 0 || stat.listeners > 0;
-}
-
-function getPerMinute(value: number) {
-    return value * 60_000 / Math.max(LAG_NOTIFICATION_MIN_COLLECTION_MS, Date.now() - startedAt);
-}
-
-function formatRate(value: number) {
-    return value < 10 ? value.toFixed(1) : formatNumber(Math.round(value));
-}
-
 function getImpact(row: PluginStats) {
     const resources = row.intervals + row.pendingTimeouts + row.animationFrames + row.listeners;
 
-    return getPerMinute(row.totalMs) +
+    return row.totalMs +
         row.maxMs * 2 +
-        getPerMinute(row.slowCalls) * settings.store.slowCallThresholdMs +
-        getPerMinute(getHeapGrowth(row)) / 65536 +
-        getPerMinute(row.errors) * 100 +
+        row.slowCalls * settings.store.slowCallThresholdMs +
+        row.asyncMs * 0.05 +
+        row.heapIncrease / 65536 +
         row.intervals * 120 +
         row.pendingTimeouts * 2 +
         row.animationFrames * 4 +
@@ -786,14 +735,12 @@ function buildRows(showDisabled: boolean, showApiPlugins: boolean, sortBy: SortB
     for (const [name, stat] of stats) {
         const plugin = plugins[name];
         const api = name.endsWith("API");
-        const enabled = plugin ? isPluginEnabled(name) : false;
 
-        if (!showDisabled && !enabled) continue;
         if (!showApiPlugins && api) continue;
 
         rows.set(name, {
             ...stat,
-            enabled,
+            enabled: plugin ? isPluginEnabled(name) : false,
             api,
             impact: getImpact(stat),
             hotSurface: getHotSurface(stat),
@@ -809,7 +756,7 @@ function buildRows(showDisabled: boolean, showApiPlugins: boolean, sortBy: SortB
         if (!showApiPlugins && api) continue;
         if (rows.has(plugin.name)) continue;
 
-        const stat = createPluginStats(plugin.name);
+        const stat = getPluginStats(plugin.name);
         rows.set(plugin.name, {
             ...stat,
             enabled,
@@ -827,7 +774,7 @@ function buildRows(showDisabled: boolean, showApiPlugins: boolean, sortBy: SortB
             case "cpu":
                 return b.totalMs - a.totalMs;
             case "memory":
-                return getHeapGrowth(b) - getHeapGrowth(a);
+                return b.heapIncrease - a.heapIncrease;
             case "calls":
                 return b.calls - a.calls;
             case "resources":
@@ -883,20 +830,7 @@ function normalizeSearch(value: string) {
 }
 
 function matchesPluginSearch(pluginName: string, query: string) {
-    if (!query) return true;
-
-    const normalizedName = normalizeSearch(pluginName);
-    return query.split(/\s+/).every(part => normalizedName.includes(part));
-}
-
-function getPluginSearchRank(pluginName: string, query: string) {
-    if (!query) return 0;
-
-    const normalizedName = normalizeSearch(pluginName);
-    if (normalizedName === query) return 0;
-    if (normalizedName.startsWith(query)) return 1;
-    if (normalizedName.split(/\s+/).some(part => part.startsWith(query))) return 2;
-    return 3;
+    return !query || pluginName.toLowerCase().includes(query);
 }
 
 function getImpactClass(impact: number) {
@@ -908,24 +842,19 @@ function getImpactClass(impact: number) {
 
 function getImpactReasons(row: DiagnosticsRow): ImpactReason[] {
     const reasons: ImpactReason[] = [];
-    const heapGrowth = getHeapGrowth(row);
-    const cpuPerMinute = getPerMinute(row.totalMs);
-    const errorsPerMinute = getPerMinute(row.errors);
-    const heapGrowthPerMinute = getPerMinute(heapGrowth);
-    const slowCallsPerMinute = getPerMinute(row.slowCalls);
 
-    if (cpuPerMinute >= 1000) {
+    if (row.totalMs >= 1000) {
         reasons.push({
             label: "High CPU",
-            value: `${formatMs(cpuPerMinute)}/min`,
-            description: "Measured callbacks consistently spend a lot of time on the JavaScript thread.",
+            value: formatMs(row.totalMs),
+            description: "Measured callbacks spent a lot of time on the JavaScript thread.",
             level: "high"
         });
-    } else if (cpuPerMinute >= 200) {
+    } else if (row.totalMs >= 200) {
         reasons.push({
             label: "Noticeable CPU",
-            value: `${formatMs(cpuPerMinute)}/min`,
-            description: "This plugin's callback rate is high enough to be worth checking.",
+            value: formatMs(row.totalMs),
+            description: "This plugin consumed enough callback time to be worth checking.",
             level: "medium"
         });
     }
@@ -946,50 +875,34 @@ function getImpactReasons(row: DiagnosticsRow): ImpactReason[] {
         });
     }
 
-    if (slowCallsPerMinute >= 10) {
+    if (row.slowCalls >= 10) {
         reasons.push({
             label: "Many slow calls",
-            value: `${formatRate(slowCallsPerMinute)}/min`,
+            value: formatNumber(row.slowCalls),
             description: "The issue appears repeatedly, so it can matter during normal use.",
             level: "high"
         });
-    } else if (slowCallsPerMinute >= 1) {
+    } else if (row.slowCalls > 0) {
         reasons.push({
             label: "Slow calls",
-            value: `${formatRate(slowCallsPerMinute)}/min`,
+            value: formatNumber(row.slowCalls),
             description: "Some calls were slower than the configured threshold.",
             level: "medium"
         });
     }
 
-    if (errorsPerMinute >= 5) {
+    if (row.heapIncrease >= 50 * 1024 * 1024) {
         reasons.push({
-            label: "Repeated errors",
-            value: `${formatRate(errorsPerMinute)}/min`,
-            description: "Measured callbacks or promises failed repeatedly.",
+            label: "Growing heap",
+            value: formatBytes(row.heapIncrease),
+            description: "This plugin is associated with many observed JavaScript allocations.",
             level: "high"
         });
-    } else if (errorsPerMinute >= 0.5) {
-        reasons.push({
-            label: "Callback errors",
-            value: `${formatRate(errorsPerMinute)}/min`,
-            description: "At least one measured callback or promise failed.",
-            level: "medium"
-        });
-    }
-
-    if (heapGrowthPerMinute >= 50 * 1024 * 1024) {
-        reasons.push({
-            label: "Net heap growth",
-            value: `${formatBytes(heapGrowthPerMinute)}/min`,
-            description: "Observed JavaScript heap increases substantially exceeded decreases.",
-            level: "high"
-        });
-    } else if (heapGrowthPerMinute >= 10 * 1024 * 1024) {
+    } else if (row.heapIncrease >= 10 * 1024 * 1024) {
         reasons.push({
             label: "Noticeable memory",
-            value: `${formatBytes(heapGrowthPerMinute)}/min`,
-            description: "Observed net heap growth is large enough to deserve attention.",
+            value: formatBytes(row.heapIncrease),
+            description: "The heap delta is large enough to contribute to memory pressure.",
             level: "medium"
         });
     }
@@ -1103,7 +1016,8 @@ function buildImpactAnalysis(rows: DiagnosticsRow[]) {
                 snippets: getRelevantSnippets(row)
             };
         })
-        .sort((a, b) => b.row.impact - a.row.impact);
+        .sort((a, b) => b.row.impact - a.row.impact)
+        .slice(0, 20);
 }
 
 function openClientDiagnosticsSettings() {
@@ -1151,11 +1065,6 @@ function stopLagNotifications() {
     lagNotificationTimes.clear();
 }
 
-function syncLagNotifications() {
-    if (pluginStarted && settings.store.lagNotifications) startLagNotifications();
-    else stopLagNotifications();
-}
-
 function getReportRows() {
     return buildRows(false, false, "impact").slice(0, 25);
 }
@@ -1167,15 +1076,14 @@ function copyReport() {
         `Collected for ${formatMs(Date.now() - startedAt)}`,
         `Heap used: ${formatBytes(memory?.usedJSHeapSize)}`,
         "",
-        "Plugin | Impact | CPU | Calls | Slow | Errors | Heap net | Resources | Hot surface",
+        "Plugin | Impact | CPU | Calls | Slow | Heap + | Resources | Hot surface",
         ...getReportRows().map(row => [
             row.name,
             row.impact.toFixed(0),
             formatMs(row.totalMs),
             formatNumber(row.calls),
             formatNumber(row.slowCalls),
-            formatNumber(row.errors),
-            formatBytes(getHeapGrowth(row)),
+            formatBytes(row.heapIncrease),
             formatNumber(row.resources),
             row.hotSurface
         ].join(" | "))
@@ -1205,9 +1113,9 @@ function copyImpactAnalysisReport() {
 
 function copyPluginMonitorReport(selectedRow: DiagnosticsRow, rows: DiagnosticsRow[]) {
     const memory = getMemory();
-    const measuredRows = rows.filter(hasMeasurements);
+    const measuredRows = rows.filter(row => row.calls > 0);
     const totalCpu = measuredRows.reduce((sum, row) => sum + row.totalMs, 0);
-    const totalHeapGrowth = measuredRows.reduce((sum, row) => sum + getHeapGrowth(row), 0);
+    const totalHeapIncrease = measuredRows.reduce((sum, row) => sum + row.heapIncrease, 0);
     const elapsedMs = Math.max(1, Date.now() - startedAt);
     const reasons = getImpactReasons(selectedRow);
     const surfaces = Object.entries(selectedRow.surfaces)
@@ -1223,10 +1131,9 @@ function copyPluginMonitorReport(selectedRow: DiagnosticsRow, rows: DiagnosticsR
         `Impact | ${selectedRow.impact.toFixed(0)}`,
         `Extra CPU | ${formatPercent(getPercent(selectedRow.totalMs, elapsedMs))}`,
         `CPU share | ${formatPercent(getPercent(selectedRow.totalMs, totalCpu))}`,
-        `Extra RAM | ${formatPercent(memory ? getPercent(getHeapGrowth(selectedRow), memory.usedJSHeapSize) : undefined)}`,
-        `RAM share | ${formatPercent(getPercent(getHeapGrowth(selectedRow), totalHeapGrowth))}`,
-        `Observed net heap | ${formatBytes(getHeapGrowth(selectedRow))}`,
-        `Errors | ${formatNumber(selectedRow.errors)}`,
+        `Extra RAM | ${formatPercent(memory ? getPercent(selectedRow.heapIncrease, memory.usedJSHeapSize) : undefined)}`,
+        `RAM share | ${formatPercent(getPercent(selectedRow.heapIncrease, totalHeapIncrease))}`,
+        `Observed heap + | ${formatBytes(selectedRow.heapIncrease)}`,
         `Max call | ${formatMs(selectedRow.maxMs)}`,
         `Slow calls | ${formatNumber(selectedRow.slowCalls)}`,
         `Resources | ${formatNumber(selectedRow.resources)}`,
@@ -1261,50 +1168,39 @@ function Metric({ label, value, detail }: { label: string; value: string; detail
     );
 }
 
-function SearchControls({ query, onChange, resultCount, totalCount }: { query: string; onChange(value: string): void; resultCount: number; totalCount: number; }) {
-    const resultLabel = resultCount === 1 ? "plugin" : "plugins";
-
+function SearchControls({ query, onChange, onSearch, disabled }: { query: string; onChange(value: string): void; onSearch(): void; disabled?: boolean; }) {
     return (
         <div className={cl("search-controls")}>
-            <div className={cl("search-field")}>
-                <MagnifyingGlassIcon className={cl("search-icon")} height={18} width={18} />
-                <div className={cl("search-input")}>
-                    <TextInput
-                        aria-label="Search plugins"
-                        placeholder="Type a plugin name..."
-                        value={query}
-                        onChange={onChange}
-                    />
-                </div>
-                {query && (
-                    <Button variant="secondary" size="small" onClick={() => onChange("")}>
-                        Clear
-                    </Button>
-                )}
+            <div className={cl("search-input")}>
+                <TextInput
+                    placeholder="Search for a plugin..."
+                    value={query}
+                    onChange={onChange}
+                />
             </div>
-            <BaseText className={cl("search-summary")} size="xs" color="text-muted">
-                {resultCount === totalCount ? `${totalCount} ${resultLabel}` : `${resultCount} of ${totalCount} plugins`}
-            </BaseText>
+            <Button variant="secondary" onClick={onSearch} disabled={disabled}>
+                <MagnifyingGlassIcon height={16} width={16} />
+                Search
+            </Button>
         </div>
     );
 }
 
 function PluginRow({ row }: { row: DiagnosticsRow; }) {
     const impactClass = getImpactClass(row.impact);
-    const status = row.enabled ? hasMeasurements(row) ? "Measured" : "Idle" : "Disabled";
-    const errorStatus = row.errors ? ` · ${formatNumber(row.errors)} errors` : "";
+    const status = row.enabled ? row.calls > 0 ? "Measured" : "Idle" : "Disabled";
 
     return (
         <div className={cl("row", "body")}>
             <div className={cl("plugin-cell")}>
                 <BaseText size="sm" weight="semibold" lineClamp={1}>{row.name}</BaseText>
-                <BaseText size="xs" color="text-muted" lineClamp={1}>{status}{row.api ? " API" : ""}{errorStatus}</BaseText>
+                <BaseText size="xs" color="text-muted" lineClamp={1}>{status}{row.api ? " API" : ""}</BaseText>
             </div>
             <BaseText className={cl("impact", impactClass)} size="sm" weight="semibold" tabularNumbers>{row.impact.toFixed(0)}</BaseText>
             <BaseText size="sm" tabularNumbers>{formatMs(row.totalMs)}</BaseText>
             <BaseText size="sm" tabularNumbers>{formatNumber(row.calls)}</BaseText>
             <BaseText size="sm" tabularNumbers>{formatNumber(row.slowCalls)}</BaseText>
-            <BaseText size="sm" tabularNumbers>{formatBytes(getHeapGrowth(row))}</BaseText>
+            <BaseText size="sm" tabularNumbers>{formatBytes(row.heapIncrease)}</BaseText>
             <BaseText size="sm" tabularNumbers>{formatNumber(row.resources)}</BaseText>
             <BaseText size="sm" tabularNumbers>{formatNumber(row.listeners)}</BaseText>
             <BaseText size="sm" lineClamp={1}>{row.hotSurface}</BaseText>
@@ -1378,8 +1274,8 @@ function ImpactDetails({ item }: { item: ImpactAnalysisItem; }) {
         <div className={cl("details")}>
             <div className={cl("detail-grid")}>
                 <Metric label="Impact" value={row.impact.toFixed(0)} detail={getImpactClass(row.impact)} />
-                <Metric label="Total CPU" value={formatMs(row.totalMs)} detail={`${formatNumber(row.calls)} calls, ${formatNumber(row.errors)} errors`} />
-                <Metric label="Net heap" value={formatBytes(getHeapGrowth(row))} detail={`Last delta ${formatBytes(row.lastHeapDelta)}`} />
+                <Metric label="Total CPU" value={formatMs(row.totalMs)} detail={`${formatNumber(row.calls)} calls`} />
+                <Metric label="Positive heap" value={formatBytes(row.heapIncrease)} detail={`Last delta ${formatBytes(row.lastHeapDelta)}`} />
                 <Metric label="Resources" value={formatNumber(row.resources)} detail={`${row.intervals} intervals, ${row.listeners} listeners`} />
             </div>
 
@@ -1444,21 +1340,17 @@ function ImpactAnalysisCard({ item, selected, onSelect }: { item: ImpactAnalysis
 function ImpactAnalysisPage() {
     const { refreshMs } = settings.use(REFRESH_SETTING_KEYS);
     const [query, setQuery] = useState("");
+    const [searchQuery, setSearchQuery] = useState("");
     const [selectedPlugin, setSelectedPlugin] = useState<string | undefined>();
     const elapsed = useFixedTimer({ interval: refreshMs });
     const items = React.useMemo(
         () => buildImpactAnalysis(buildRows(false, false, "impact")),
         [elapsed]
     );
-    const normalizedQuery = normalizeSearch(query);
     const filteredItems = React.useMemo(
-        () => items
-            .filter(item => matchesPluginSearch(item.row.name, normalizedQuery))
-            .sort((a, b) => getPluginSearchRank(a.row.name, normalizedQuery) - getPluginSearchRank(b.row.name, normalizedQuery)),
-        [items, normalizedQuery]
+        () => items.filter(item => matchesPluginSearch(item.row.name, searchQuery)),
+        [items, searchQuery]
     );
-    const reviewCount = items.filter(item => item.shouldDisable).length;
-    const highSignalCount = items.filter(item => item.reasons.some(reason => reason.level === "high")).length;
 
     return (
         <div className={cl("page")}>
@@ -1477,18 +1369,11 @@ function ImpactAnalysisPage() {
                 </div>
             </div>
 
-            <div className={cl("metrics")}>
-                <Metric label="Needs review" value={formatNumber(reviewCount)} detail="Strong disable recommendation" />
-                <Metric label="High signals" value={formatNumber(highSignalCount)} detail="Plugins with a high-risk signal" />
-                <Metric label="Measured candidates" value={formatNumber(items.length)} detail="Enabled plugins with samples" />
-                <Metric label="Highest impact" value={items[0]?.row.impact.toFixed(0) ?? "0"} detail={items[0]?.row.name ?? "No samples yet"} />
-            </div>
-
             <SearchControls
                 query={query}
                 onChange={setQuery}
-                resultCount={filteredItems.length}
-                totalCount={items.length}
+                onSearch={() => setSearchQuery(normalizeSearch(query))}
+                disabled={items.length === 0}
             />
 
             {items.length === 0 ? (
@@ -1518,7 +1403,7 @@ function ImpactAnalysisPage() {
 }
 
 function PluginMonitorPage() {
-    const { showDisabled, showApiPlugins, refreshMs } = settings.use(MONITOR_SETTING_KEYS);
+    const { showDisabled, showApiPlugins, refreshMs } = settings.use(SETTINGS_KEYS);
     const [query, setQuery] = useState("");
     const [selectedPlugin, setSelectedPlugin] = useState<string | undefined>();
     const elapsed = useFixedTimer({ interval: refreshMs });
@@ -1527,20 +1412,29 @@ function PluginMonitorPage() {
         () => buildRows(showDisabled, showApiPlugins, "impact"),
         [elapsed, showDisabled, showApiPlugins]
     );
-    const normalizedQuery = normalizeSearch(query);
-    const matchingRows = React.useMemo(
-        () => rows
-            .filter(row => matchesPluginSearch(row.name, normalizedQuery))
-            .sort((a, b) => getPluginSearchRank(a.name, normalizedQuery) - getPluginSearchRank(b.name, normalizedQuery)),
+    const normalizedQuery = query.trim().toLowerCase();
+    const filteredRows = React.useMemo(
+        () => (normalizedQuery
+            ? rows.filter(row => row.name.toLowerCase().includes(normalizedQuery))
+            : rows).slice(0, 16),
         [normalizedQuery, rows]
     );
-    const filteredRows = matchingRows.slice(0, 16);
-    const measuredRows = rows.filter(hasMeasurements);
-    const selectedRow = filteredRows.find(row => row.name === selectedPlugin) ?? filteredRows[0];
+    const measuredRows = rows.filter(row => row.calls > 0);
+    const selectedRow = rows.find(row => row.name === selectedPlugin) ?? filteredRows[0];
     const totalCpu = measuredRows.reduce((sum, row) => sum + row.totalMs, 0);
-    const totalHeapGrowth = measuredRows.reduce((sum, row) => sum + getHeapGrowth(row), 0);
+    const totalHeapIncrease = measuredRows.reduce((sum, row) => sum + row.heapIncrease, 0);
     const elapsedMs = Math.max(1, Date.now() - startedAt);
     const reasons = selectedRow ? getImpactReasons(selectedRow) : [];
+
+    function selectSearchResult() {
+        const exactMatch = normalizedQuery
+            ? filteredRows.find(row => row.name.toLowerCase() === normalizedQuery)
+                ?? filteredRows.find(row => row.name.toLowerCase().startsWith(normalizedQuery))
+            : undefined;
+        const match = exactMatch ?? filteredRows[0];
+
+        if (match) setSelectedPlugin(match.name);
+    }
 
     return (
         <div className={cl("page")}>
@@ -1562,8 +1456,8 @@ function PluginMonitorPage() {
             <SearchControls
                 query={query}
                 onChange={setQuery}
-                resultCount={matchingRows.length}
-                totalCount={rows.length}
+                onSearch={selectSearchResult}
+                disabled={filteredRows.length === 0}
             />
 
             <div className={cl("monitor-layout")}>
@@ -1590,11 +1484,7 @@ function PluginMonitorPage() {
                             <div className={cl("analysis-title")}>
                                 <BaseText size="lg" weight="semibold" lineClamp={1}>{selectedRow.name}</BaseText>
                                 <BaseText size="sm" color="text-muted" lineClamp={2}>
-                                    {selectedRow.calls > 0
-                                        ? `Measured through ${formatNumber(selectedRow.calls)} callbacks.`
-                                        : selectedRow.resources > 0
-                                            ? `${formatNumber(selectedRow.resources)} active resources remain after reset.`
-                                            : "No measured callbacks yet."}
+                                    {selectedRow.calls > 0 ? `Measured through ${formatNumber(selectedRow.calls)} callbacks.` : "No measured callbacks yet."}
                                 </BaseText>
                             </div>
                             <BaseText className={cl("impact", getImpactClass(selectedRow.impact))} size="sm" weight="semibold" tabularNumbers>{selectedRow.impact.toFixed(0)}</BaseText>
@@ -1603,14 +1493,14 @@ function PluginMonitorPage() {
                         <div className={cl("metrics")}>
                             <Metric label="Extra CPU" value={formatPercent(getPercent(selectedRow.totalMs, elapsedMs))} detail={`${formatMs(selectedRow.totalMs)} since reset`} />
                             <Metric label="CPU share" value={formatPercent(getPercent(selectedRow.totalMs, totalCpu))} detail="Of measured plugin CPU" />
-                            <Metric label="Extra RAM" value={formatPercent(memory ? getPercent(getHeapGrowth(selectedRow), memory.usedJSHeapSize) : undefined)} detail={`${formatBytes(getHeapGrowth(selectedRow))} observed net heap`} />
-                            <Metric label="RAM share" value={formatPercent(getPercent(getHeapGrowth(selectedRow), totalHeapGrowth))} detail="Of measured net heap growth" />
+                            <Metric label="Extra RAM" value={formatPercent(memory ? getPercent(selectedRow.heapIncrease, memory.usedJSHeapSize) : undefined)} detail={`${formatBytes(selectedRow.heapIncrease)} observed heap +`} />
+                            <Metric label="RAM share" value={formatPercent(getPercent(selectedRow.heapIncrease, totalHeapIncrease))} detail="Of measured heap increase" />
                         </div>
 
                         <div className={cl("detail-grid")}>
                             <Metric label="Max call" value={formatMs(selectedRow.maxMs)} detail={`${formatNumber(selectedRow.slowCalls)} slow calls`} />
                             <Metric label="Resources" value={formatNumber(selectedRow.resources)} detail={`${selectedRow.intervals} intervals, ${selectedRow.listeners} listeners`} />
-                            <Metric label="Async wait" value={formatMs(selectedRow.asyncMs)} detail={`${formatNumber(selectedRow.asyncCalls)} promises observed`} />
+                            <Metric label="Async time" value={formatMs(selectedRow.asyncMs)} detail={`${formatNumber(selectedRow.asyncCalls)} async calls`} />
                             <Metric label="Last heap delta" value={formatBytes(selectedRow.lastHeapDelta)} detail={memory ? "Chromium heap sample" : "Chromium heap unavailable"} />
                         </div>
 
@@ -1649,20 +1539,18 @@ function PluginMonitorPage() {
 function DiagnosticsPage() {
     const { sortBy, showDisabled, showApiPlugins, refreshMs } = settings.use(SETTINGS_KEYS);
     const [query, setQuery] = useState("");
+    const [searchQuery, setSearchQuery] = useState("");
     const elapsed = useFixedTimer({ interval: refreshMs });
     const memory = getMemory();
     const rows = React.useMemo(
         () => buildRows(showDisabled, showApiPlugins, sortBy as SortBy),
         [elapsed, showDisabled, showApiPlugins, sortBy]
     );
-    const normalizedQuery = normalizeSearch(query);
     const filteredRows = React.useMemo(
-        () => rows
-            .filter(row => matchesPluginSearch(row.name, normalizedQuery))
-            .sort((a, b) => getPluginSearchRank(a.name, normalizedQuery) - getPluginSearchRank(b.name, normalizedQuery)),
-        [rows, normalizedQuery]
+        () => rows.filter(row => matchesPluginSearch(row.name, searchQuery)),
+        [rows, searchQuery]
     );
-    const measuredRows = rows.filter(hasMeasurements);
+    const measuredRows = filteredRows.filter(row => row.calls > 0);
     const totalCpu = measuredRows.reduce((sum, row) => sum + row.totalMs, 0);
     const activeResources = measuredRows.reduce((sum, row) => sum + row.resources, 0);
 
@@ -1689,7 +1577,7 @@ function DiagnosticsPage() {
 
             <div className={cl("metrics")}>
                 <Metric label="Heap used" value={formatBytes(memory?.usedJSHeapSize)} detail={memory ? `${formatBytes(memory.totalJSHeapSize)} allocated` : "Chromium did not expose heap data"} />
-                <Metric label="Measured plugins" value={formatNumber(measuredRows.length)} detail={`${formatNumber(filteredRows.length)} of ${formatNumber(rows.length)} shown`} />
+                <Metric label="Measured plugins" value={formatNumber(measuredRows.length)} detail={`${formatNumber(filteredRows.length)} visible`} />
                 <Metric label="Callback time" value={formatMs(totalCpu)} detail={`Collected for ${formatMs(Date.now() - startedAt)}`} />
                 <Metric label="Active resources" value={formatNumber(activeResources)} detail="Timers, frames, and listeners" />
             </div>
@@ -1697,8 +1585,8 @@ function DiagnosticsPage() {
             <SearchControls
                 query={query}
                 onChange={setQuery}
-                resultCount={filteredRows.length}
-                totalCount={rows.length}
+                onSearch={() => setSearchQuery(normalizeSearch(query))}
+                disabled={rows.length === 0}
             />
 
             <div className={cl("table")}>
@@ -1708,7 +1596,7 @@ function DiagnosticsPage() {
                     <BaseText size="xs" weight="semibold">CPU</BaseText>
                     <BaseText size="xs" weight="semibold">Calls</BaseText>
                     <BaseText size="xs" weight="semibold">Slow</BaseText>
-                    <BaseText size="xs" weight="semibold">Heap net</BaseText>
+                    <BaseText size="xs" weight="semibold">Heap +</BaseText>
                     <BaseText size="xs" weight="semibold">Resources</BaseText>
                     <BaseText size="xs" weight="semibold">Listeners</BaseText>
                     <BaseText size="xs" weight="semibold">Hot surface</BaseText>
@@ -1777,9 +1665,6 @@ function GuidePage() {
                 <BaseText size="sm" color="text-muted">
                     CPU and RAM are not per-plugin values read directly from the operating system. The plugin estimates cost by observing JavaScript work, Chromium heap data, and resources created during plugin callbacks.
                 </BaseText>
-                <BaseText size="sm" color="text-muted">
-                    Impact uses per-minute rates so a lightweight plugin does not become suspicious only because Discord stayed open for a long time. Async wait time is reported separately and does not count as CPU.
-                </BaseText>
             </div>
         </div>
     );
@@ -1829,16 +1714,13 @@ export default definePlugin({
             startedAt = Date.now();
             installGlobalProbes();
             for (const plugin of Object.values(plugins)) instrumentPlugin(plugin);
-            pluginStarted = true;
-            syncLagNotifications();
-            if (!SettingsPlugin.customEntries.some(entry => entry.key === ENTRY_KEY)) {
-                SettingsPlugin.customEntries.push({
-                    key: ENTRY_KEY,
-                    title: "Client diagnostics",
-                    Component: DiagnosticsPageWrapped,
-                    Icon: ClockIcon
-                });
-            }
+            startLagNotifications();
+            SettingsPlugin.customEntries.push({
+                key: ENTRY_KEY,
+                title: "Client diagnostics",
+                Component: DiagnosticsPageWrapped,
+                Icon: ClockIcon
+            });
         } catch (error) {
             logger.error("Failed to start client diagnostics.", error);
         }
@@ -1846,8 +1728,7 @@ export default definePlugin({
 
     stop() {
         try {
-            pluginStarted = false;
-            syncLagNotifications();
+            stopLagNotifications();
             restoreGlobalProbes();
             removeFromArray(SettingsPlugin.customEntries, entry => entry.key === ENTRY_KEY);
         } catch (error) {

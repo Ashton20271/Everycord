@@ -13,8 +13,6 @@ import { Button, Forms, React, showToast, Toasts } from "@webpack/common";
 
 const STYLE_ID = "live-wallpaper-style";
 const CONTAINER_ID = "live-wallpaper-container";
-let active = false;
-let wallpaperGeneration = 0;
 
 // ── File picker ────────────────────────────────────────────────────────────────
 
@@ -52,15 +50,12 @@ async function getWallpaperUrl(): Promise<string> {
 function SettingsComponent() {
     const [currentUrl, setCurrentUrl] = React.useState("");
     const [inputValue, setInputValue] = React.useState("");
-    const mounted = React.useRef(true);
 
     React.useEffect(() => {
         getWallpaperUrl().then(url => {
-            if (!mounted.current) return;
             setCurrentUrl(url);
             if (!url.startsWith("data:")) setInputValue(url);
         });
-        return () => { mounted.current = false; };
     }, []);
 
     const isDataUrl = currentUrl.startsWith("data:");
@@ -77,11 +72,9 @@ function SettingsComponent() {
                         size={Button.Sizes.SMALL}
                         onClick={async () => {
                             const dataUrl = await pickFile();
-                            if (!mounted.current) return;
                             if (dataUrl) {
                                 await DataStore.set(REMOTE_URL_KEY, "");
                                 await DataStore.set(LOCAL_DATA_KEY, dataUrl);
-                                if (!mounted.current) return;
                                 setCurrentUrl(dataUrl);
                                 setInputValue("");
                                 applyWallpaper();
@@ -99,7 +92,6 @@ function SettingsComponent() {
                             onClick={async () => {
                                 await DataStore.set(REMOTE_URL_KEY, "");
                                 await DataStore.set(LOCAL_DATA_KEY, "");
-                                if (!mounted.current) return;
                                 setCurrentUrl("");
                                 setInputValue("");
                                 applyWallpaper();
@@ -134,7 +126,6 @@ function SettingsComponent() {
                             setInputValue(val);
                             await DataStore.set(LOCAL_DATA_KEY, "");
                             await DataStore.set(REMOTE_URL_KEY, val);
-                            if (!mounted.current) return;
                             setCurrentUrl(val);
                             applyWallpaper();
                         }}
@@ -218,11 +209,9 @@ function removeWallpaperElements() {
 }
 
 async function applyWallpaper() {
-    const generation = ++wallpaperGeneration;
     removeWallpaperElements();
 
     const url = await getWallpaperUrl();
-    if (!active || generation !== wallpaperGeneration) return;
     if (!url) return;
 
     const opacity = settings.store.opacity ?? 0.15;
@@ -295,8 +284,6 @@ export default definePlugin({
     _startTimer: null as ReturnType<typeof setTimeout> | null,
 
     start() {
-        active = true;
-        wallpaperGeneration++;
         // Small delay to let the DOM be ready
         this._startTimer = setTimeout(() => {
             this._startTimer = null;
@@ -305,8 +292,6 @@ export default definePlugin({
     },
 
     stop() {
-        active = false;
-        wallpaperGeneration++;
         if (this._startTimer) {
             clearTimeout(this._startTimer);
             this._startTimer = null;

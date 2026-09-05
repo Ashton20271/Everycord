@@ -42,7 +42,6 @@ export type SettingsPluginUiElements = {
 export interface Settings {
     autoUpdate: boolean;
     autoUpdateNotification: boolean;
-    updaterBranch: "main" | "dev" | "dev2";
     useQuickCss: boolean;
     eagerPatches: boolean;
     enabledThemes: string[];
@@ -103,19 +102,12 @@ export interface Settings {
     };
 
     ignoreResetWarning: boolean;
-    hideThemeMarketplace?: boolean;
-    hideSnippetMarketplace?: boolean;
-    useTestcordIcon: boolean;
 }
 
 const DefaultSettings: Settings = {
     autoUpdate: true,
     autoUpdateNotification: true,
-    updaterBranch: "main",
     useQuickCss: true,
-    useTestcordIcon: false,
-    hideThemeMarketplace: false,
-    hideSnippetMarketplace: false,
     themeLinks: [],
     eagerPatches: false, // Eagerly patching no longer works due to module factories with the same id being able to have different sources now.
     enabledThemes: [],
@@ -201,24 +193,9 @@ export const SettingsStore = new SettingsStoreClass(settings, {
 });
 
 if (!IS_REPORTER) {
-    let flushQueued = false;
-    const changedPaths = new Set<string>();
-
     SettingsStore.addGlobalChangeListener((_, path) => {
-        changedPaths.add(path);
-
-        if (flushQueued) return;
-        flushQueued = true;
-
-        queueMicrotask(() => {
-            flushQueued = false;
-
-            const path = changedPaths.size === 1 ? changedPaths.values().next().value : "";
-            changedPaths.clear();
-
-            SettingsStore.plain.cloud.settingsSyncVersion = Date.now();
-            VencordNative.settings.set(SettingsStore.plain, path);
-        });
+        SettingsStore.plain.cloud.settingsSyncVersion = Date.now();
+        VencordNative.settings.set(SettingsStore.plain, path);
     });
 }
 
@@ -246,42 +223,31 @@ export const Settings = SettingsStore.store;
  * @returns Settings
  */
 // TODO: Representing paths as essentially "string[].join('.')" wont allow dots in paths, change to "paths?: string[][]" later
-export function useSettings(paths?: readonly UseSettings<Settings>[]) {
+export function useSettings(paths?: UseSettings<Settings>[]) {
     const [, forceUpdate] = React.useReducer(() => ({}), {});
 
-    // Almost every call site passes a fresh array literal, so keying the effect on the
-    // array identity tore down and rebuilt every listener on every single render. Key on
-    // the contents instead and read the current paths through a ref.
-    const pathsRef = React.useRef(paths);
-    pathsRef.current = paths;
-    const pathKey = paths ? paths.join("\0") : null;
-
     useEffect(() => {
-        const currentPaths = pathsRef.current;
-
-        if (currentPaths) {
-            currentPaths.forEach(p => {
-                if (!p) return;
+        if (paths) {
+            paths.forEach(p => {
                 if (p.endsWith(".*")) {
                     SettingsStore.addPrefixChangeListener(p.slice(0, -2), forceUpdate);
                 } else {
-                    SettingsStore.addChangeListener(p as any, forceUpdate);
+                    SettingsStore.addChangeListener(p, forceUpdate);
                 }
             });
 
-            return () => currentPaths.forEach(p => {
-                if (!p) return;
+            return () => paths.forEach(p => {
                 if (p.endsWith(".*")) {
                     SettingsStore.removePrefixChangeListener(p.slice(0, -2), forceUpdate);
                 } else {
-                    SettingsStore.removeChangeListener(p as any, forceUpdate);
+                    SettingsStore.removeChangeListener(p, forceUpdate);
                 }
             });
         } else {
             SettingsStore.addGlobalChangeListener(forceUpdate);
             return () => SettingsStore.removeGlobalChangeListener(forceUpdate);
         }
-    }, [pathKey]);
+    }, [paths]);
 
     return SettingsStore.store;
 }
@@ -406,7 +372,7 @@ export function definePluginSettings<
         pluginName: "",
 
         withPrivateSettings<T extends object>() {
-            return this as DefinedSettings<Def, T>;
+            return this as DefinedSettings<Def, PrivateSettings & T>;
         }
     };
 

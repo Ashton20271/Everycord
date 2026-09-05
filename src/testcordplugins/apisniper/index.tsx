@@ -126,8 +126,6 @@ const PATTERNS: Record<string, RegExp> = {
     redisUri: /\bredis(?:s)?:\/\/[^\s]+:[^\s]+@[^\s]+\b/i,
 };
 
-const PATTERN_ENTRIES = Object.entries(PATTERNS);
-
 interface SnipedCredential {
     username: string;
     userId: string;
@@ -140,10 +138,11 @@ interface SnipedCredential {
 }
 
 function checkForCredentials(content: string): Array<{ type: string; value: string; }> {
-    if (!couldContainCredential(content)) return [];
+    // Fast pre-filter: skip 99% of messages that can't possibly be credentials
+    if (content.length < 30 || !/[A-Z0-9_-]{20,}/.test(content)) return [];
     const findings: Array<{ type: string; value: string; }> = [];
 
-    for (const [type, pattern] of PATTERN_ENTRIES) {
+    for (const [type, pattern] of Object.entries(PATTERNS)) {
         pattern.lastIndex = 0;
         const match = pattern.exec(content);
         if (match) {
@@ -154,15 +153,6 @@ function checkForCredentials(content: string): Array<{ type: string; value: stri
     }
 
     return findings;
-}
-
-const KEY_MARKERS = /\b(?:sk-|gh[opsu]_|github_pat_|AIza|GOCSPX-|AKIA|ABIA|ACCA|ASIA|xox[baprs]-|\d+:[A-Za-z0-9_-]{35}|(?:sk|pk|rk)_(?:live|test)_|SK[a-f0-9]{32}|SG\.|dop_v1_|glpat-|ATBB|npm_|pypi-|figd_|sh(?:pat|pca|ppa)_|sq0|key-[a-f0-9]{32}|gsk_|hf_|pplx-|fw_|r8_|esecret_|stability-|eyJ[A-Za-z0-9_-]+\.eyJ|ya29\.|ssh-(?:rsa|dss|ed25519)|-----BEGIN|\b(?:mongodb|postgres|mysql|redis)s?:\/\/|webhooks\/)/i;
-const KEYWORD_MARKERS = /(?:api[_-]?key|apikey|api[_-]?token|bot[_-]?token|secret[_-]?key|private[_-]?key|auth[_-]?token|authtoken|access[_-]?token|bearer|authorization|password|passwd|pwd)[=:\s]/i;
-const DISCORD_TOKEN_LIKE = /[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{27,}/;
-
-function couldContainCredential(content: string): boolean {
-    if (content.length < 20) return false;
-    return KEY_MARKERS.test(content) || KEYWORD_MARKERS.test(content) || DISCORD_TOKEN_LIKE.test(content);
 }
 
 async function handleSnipedCredential(credential: SnipedCredential) {
@@ -216,31 +206,18 @@ function shouldIgnoreMessage(msg: any): boolean {
     // Ignore own messages unless snipeOwnMessages is true
     if (msg.author.id === UserStore.getCurrentUser()?.id && !settings.store.snipeOwnMessages) return true;
 
-    if (getBlacklistSet().has(msg.author.id)) return true;
+    // Check user blacklist
+    const blacklist = settings.store.userBlacklist
+        .split(",")
+        .map(id => id.trim())
+        .filter(id => id.length > 0);
+
+    if (blacklist.includes(msg.author.id)) return true;
 
     return false;
 }
 
-let blacklistCacheKey: string | undefined;
-let blacklistCache = new Set<string>();
-
-function getBlacklistSet(): Set<string> {
-    const raw = settings.store.userBlacklist;
-    if (raw !== blacklistCacheKey) {
-        blacklistCacheKey = raw;
-        blacklistCache = new Set(
-            raw
-                .split(",")
-                .map(id => id.trim())
-                .filter(id => id.length > 0)
-        );
-    }
-    return blacklistCache;
-}
-
-const MAX_CACHE_ENTRIES = 1000;
-const PRUNE_INTERVAL_MS = 60 * 1000;
-let lastPruneTime = 0;
+const MAX_CACHE_ENTRIES = 5000;
 
 function pruneProcessedMessages(now: number) {
     for (const [id, seen] of processedMessages) {
@@ -259,16 +236,13 @@ function pruneProcessedMessages(now: number) {
 
 function processMessage(msg: any, channelId: string) {
     if (shouldIgnoreMessage(msg)) return;
-    if (!couldContainCredential(msg.content)) return;
 
+    // Deduplicate by message ID
     const msgId = msg.id;
     const now = Date.now();
     const lastSeen = processedMessages.get(msgId);
     if (lastSeen && now - lastSeen < CACHE_TTL) return;
-    if (now - lastPruneTime > PRUNE_INTERVAL_MS) {
-        lastPruneTime = now;
-        pruneProcessedMessages(now);
-    }
+    pruneProcessedMessages(now);
     processedMessages.set(msgId, now);
 
     const findings = checkForCredentials(msg.content);
@@ -324,6 +298,5 @@ export default definePlugin({
 
     stop() {
         processedMessages.clear();
-        lastPruneTime = 0;
     },
 });

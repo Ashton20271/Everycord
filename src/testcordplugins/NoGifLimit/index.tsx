@@ -23,9 +23,6 @@ import { inspectMedia } from "../gifCaptioner/utils/media";
 
 const DATA_KEY = "heartGifs-data";
 const FOLDERS_KEY = "heartGifs-folders";
-const MAX_STORED_ITEMS = 1000;
-const MAX_CACHED_MEDIA_BYTES = 32 * 1024 * 1024;
-const MAX_CACHED_ITEM_BYTES = 8 * 1024 * 1024;
 
 interface GifTransferEntry {
     url: string;
@@ -164,21 +161,7 @@ async function getStoredItems(): Promise<FavItem[]> {
 }
 
 async function saveItems(items: FavItem[]): Promise<void> {
-    pruneItems(items);
     await DataStore.set(DATA_KEY, items);
-}
-
-function pruneItems(items: FavItem[]) {
-    if (items.length > MAX_STORED_ITEMS) items.length = MAX_STORED_ITEMS;
-
-    let cachedBytes = 0;
-    for (const item of items) cachedBytes += item.cachedUrl?.length ?? 0;
-    for (var i = items.length - 1; i >= 0 && cachedBytes > MAX_CACHED_MEDIA_BYTES; i--) {
-        const { cachedUrl } = items[i];
-        if (!cachedUrl) continue;
-        cachedBytes -= cachedUrl.length;
-        items[i].cachedUrl = undefined;
-    }
 }
 
 async function getStoredFolders(): Promise<Folder[]> {
@@ -278,10 +261,8 @@ async function cacheItemMedia(id: string, url: string): Promise<void> {
     try {
         var response = await fetch(url);
         if (!response.ok) return;
-        var length = Number(response.headers.get("content-length"));
-        if (length > MAX_CACHED_ITEM_BYTES) return;
         var blob = await response.blob();
-        if (blob.size > MAX_CACHED_ITEM_BYTES) return;
+        if (blob.size > 8 * 1024 * 1024) return;
         var dataUrl = await new Promise<string>(function (resolve, reject) {
             var reader = new FileReader();
             reader.onload = function () { resolve(reader.result as string); };
@@ -434,8 +415,6 @@ async function importFromGifTransfer(file: File): Promise<void> {
 
         var currentItems = await getStoredItems();
         var currentUrls = new Set(currentItems.map(function (i) { return i.url; }));
-        var discordFavs = getCurrentDiscordFavoriteUrls();
-        var importedItems: FavItem[] = [];
 
         var added = 0;
         var skipped = 0;
@@ -458,27 +437,14 @@ async function importFromGifTransfer(file: File): Promise<void> {
                 continue;
             }
 
-            if (discordFavs.has(gif.url)) {
-                skipped++;
-                continue;
-            }
-
-            importedItems.push({
-                id: generateId(),
+            await addToLocal({
                 url: gif.url,
                 src: gif.src || gif.url,
                 width: Number(gif.width) || 498,
                 height: Number(gif.height) || 280,
-                type: mediaType,
-                addedAt: Date.now()
+                type: mediaType
             });
-            currentUrls.add(gif.url);
             added++;
-        }
-
-        if (importedItems.length) {
-            currentItems.unshift(...importedItems.reverse());
-            await saveItems(currentItems);
         }
 
         notify("Imported " + added + " items! (" + skipped + " skipped)", "success");
@@ -584,7 +550,7 @@ function NoGifLimitModal({ modalProps }: { modalProps: ModalProps; }): React.Rea
                     return;
                 }
                 if (mediaUrl.indexOf("giphy.com") !== -1) {
-                    var giphyIdMatch = mediaUrl.match(/giphy\.com\/gifs\/([^/?]+)/);
+                    var giphyIdMatch = mediaUrl.match(/giphy\.com\/gifs\/([^\/\?]+)/);
                     if (giphyIdMatch && giphyIdMatch[1]) {
                         var giphyId = giphyIdMatch[1];
                         setOverrideSrc(function (prev) { var o = {}; for (var k in prev) o[k] = prev[k]; o[id] = "https://media.giphy.com/media/" + giphyId + "/200.gif"; return o; });
@@ -763,9 +729,10 @@ function NoGifLimitModal({ modalProps }: { modalProps: ModalProps; }): React.Rea
 
     var handleBulkDelete = async function () {
         var ids = Array.from(selectedItems);
-        var idsSet = new Set(ids);
-        var updatedItems = (await getStoredItems()).filter(function (item) { return !idsSet.has(item.id); });
-        await saveItems(updatedItems);
+        for (var i = 0; i < ids.length; i++) {
+            await removeFromLocal(ids[i]);
+        }
+        var updatedItems = await getStoredItems();
         setItems(updatedItems);
         setSelectedItems(new Set());
         notify("Deleted " + selectedItems.size + " items", "info");
@@ -773,12 +740,10 @@ function NoGifLimitModal({ modalProps }: { modalProps: ModalProps; }): React.Rea
 
     var handleBulkMove = async function (folderId: string | null) {
         var ids = Array.from(selectedItems);
-        var idsSet = new Set(ids);
-        var updatedItems = await getStoredItems();
-        for (var i = 0; i < updatedItems.length; i++) {
-            if (idsSet.has(updatedItems[i].id)) updatedItems[i].folderId = folderId || undefined;
+        for (var i = 0; i < ids.length; i++) {
+            await moveToFolder(ids[i], folderId);
         }
-        await saveItems(updatedItems);
+        var updatedItems = await getStoredItems();
         setItems(updatedItems);
         setSelectedItems(new Set());
         notify("Moved " + selectedItems.size + " items", "success");

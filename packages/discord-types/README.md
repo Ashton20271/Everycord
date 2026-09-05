@@ -7,15 +7,15 @@ While it was primarily created for OpenCord based on Vencord and its respective 
 ## Installation
 
 ```bash
-npm install -D @everycord/discord-types
-yarn add -D @everycord/discord-types
-pnpm add -D @everycord/discord-types
+npm install -D @opencord/discord-types
+yarn add -D @opencord/discord-types
+pnpm add -D @opencord/discord-types
 ```
 
 ## Example Usage
 
 ```ts
-import type { UserStore } from "@everycord/discord-types";
+import type { UserStore } from "@opencord/discord-types";
 
 const userStore: UserStore = findStore("UserStore"); // findStore is up to you to implement, this library only provides types and no runtime code
 ```
@@ -25,7 +25,7 @@ const userStore: UserStore = findStore("UserStore"); // findStore is up to you t
 This library also exports some const enums that you can use from Typescript code:
 
 ```ts
-import { ApplicationCommandType } from "@everycord/discord-types/enums";
+import { ApplicationCommandType } from "@opencord/discord-types/enums";
 
 console.log(ApplicationCommandType.CHAT_INPUT); // 1
 ```

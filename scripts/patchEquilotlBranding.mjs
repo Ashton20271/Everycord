@@ -96,7 +96,7 @@ const systemReplacements = {
     "EQUICORD_DEV_INSTALL": "OPENCORD_DEV_INSTALL",
     "EquicordData": "OpenCordData",
     'appdir.New("Equicord")': 'appdir.New("OpenCord")',
-    "equicord.asar": "everycord.asar",
+    "equicord.asar": "opencord.asar",
     '`// Equicord (\\w+)`': '`// OpenCord (\\w+)`',
     "Found existing Equicord Install": "Found existing OpenCord Install",
     "non-Equicord app.asar": "non-OpenCord app.asar",
@@ -129,9 +129,9 @@ for (const path of walkGoFiles(equilotlDir)) {
 }
 
 if (assetsDir) {
-    const pngPath = join(assetsDir, "everycord-symbol-dark-256.png");
-    const icoPath = join(assetsDir, "everycord-symbol-dark.ico");
-    const icnsPath = join(assetsDir, "everycord-symbol-dark.icns");
+    const pngPath = join(assetsDir, "opencord-symbol-dark-256.png");
+    const icoPath = join(assetsDir, "opencord-symbol-dark.ico");
+    const icnsPath = join(assetsDir, "opencord-symbol-dark.icns");
 
     try {
         copyFileSync(pngPath, join(equilotlDir, "winres", "icon.png"));
@@ -162,7 +162,7 @@ if (assetsDir) {
     try {
         let plist = read("macos/Info.plist");
         plist = plist.replace("<string>Equilotl</string>", "<string>OpenCordInstaller</string>");
-        plist = plist.replace("<string>org.equicord.equilotl</string>", "<string>org.everycord.everycordinstaller</string>");
+        plist = plist.replace("<string>org.equicord.equilotl</string>", "<string>org.opencord.opencordinstaller</string>");
         write("macos/Info.plist", plist);
         console.log("Patched macOS app bundle metadata");
     } catch (err) {

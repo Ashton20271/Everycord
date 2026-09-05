@@ -20,17 +20,6 @@ const VoiceStateStore = findStoreLazy("VoiceStateStore");
 const sessionStore = findByPropsLazy("getSessionId");
 
 const currentVcOwners: Map<string, string> = new Map();
-let pluginActive = false;
-let pluginGeneration = 0;
-const pendingTimeouts = new Set<ReturnType<typeof setTimeout>>();
-
-function scheduleTimeout(callback: () => void, ms: number) {
-    const timeout = setTimeout(() => {
-        pendingTimeouts.delete(timeout);
-        if (pluginActive) callback();
-    }, ms);
-    pendingTimeouts.add(timeout);
-}
 
 const settings = definePluginSettings({
     allowedguilds: {
@@ -77,7 +66,7 @@ function isCustomVoiceChannel(channelId: string): boolean {
     const channelName = channel.name.trim();
 
     // Remove all infinity symbols, pipe symbols, and spaces from the start
-    const cleanedName = channelName.replace(/^[\u221E|\s]+/, "");
+    const cleanedName = channelName.replace(/^[\u221E\|\s]+/, "");
 
     // Check if what remains matches "VC [number]"
     const vcPattern = /^VC\s+\d+$/;
@@ -150,7 +139,6 @@ function isGuildAllowed(guildId: string): boolean {
 }
 
 function attemptClaim(channelId: string, reason: string, isManual: boolean = false) {
-    const generation = pluginGeneration;
     if (!isManual && !settings.store.autoClaimEnabled) return;
 
     if (!isCustomVoiceChannel(channelId)) {
@@ -196,7 +184,6 @@ function attemptClaim(channelId: string, reason: string, isManual: boolean = fal
             nonce: Math.floor(Math.random() * 10000000000000).toString()
         }
     }).then(() => {
-        if (!pluginActive || generation !== pluginGeneration) return;
         console.log(`Successfully ${isManual ? "manually" : "auto-"}claimed channel ${channelId}`);
 
         currentVcOwners.set(channelId, clientUserId);
@@ -210,7 +197,6 @@ function attemptClaim(channelId: string, reason: string, isManual: boolean = fal
             }
         });
     }).catch(error => {
-        if (!pluginActive || generation !== pluginGeneration) return;
         console.error("Failed to claim channel:", error);
         Toasts.show({
             message: `Failed to claim channel: ${error.message}`,
@@ -247,7 +233,7 @@ function autoDetectVcOwnerOnJoin(channelId: string, guildId: string) {
         return;
     }
 
-    scheduleTimeout(() => {
+    setTimeout(() => {
         updateVcOwnerTracking(channelId);
         const owner = currentVcOwners.get(channelId);
         const clientUserId = UserStore.getCurrentUser().id;
@@ -341,8 +327,6 @@ export default definePlugin({
     settings,
 
     start() {
-        pluginActive = true;
-        pluginGeneration++;
         if (ownershipMonitorInterval) {
             clearInterval(ownershipMonitorInterval);
             ownershipMonitorInterval = null;
@@ -350,15 +334,11 @@ export default definePlugin({
     },
 
     stop() {
-        pluginActive = false;
-        pluginGeneration++;
         if (ownershipMonitorInterval) {
             clearInterval(ownershipMonitorInterval);
             ownershipMonitorInterval = null;
             console.log("Stopped VC ownership monitoring");
         }
-        for (const timeout of pendingTimeouts) clearTimeout(timeout);
-        pendingTimeouts.clear();
         currentVcOwners.clear();
     },
 
@@ -469,7 +449,7 @@ export default definePlugin({
                             currentVcOwners.delete(oldChannelId);
 
                             // Check if client is already the new owner before attempting claim
-                            scheduleTimeout(() => {
+                            setTimeout(() => {
                                 const newOwner = detectVcOwner(oldChannelId);
                                 if (newOwner === clientUserId) {
                                     console.log("Client is already the new owner, no claim needed");
@@ -480,7 +460,7 @@ export default definePlugin({
                             }, 1000);
 
                             // Fallback attempt
-                            scheduleTimeout(() => {
+                            setTimeout(() => {
                                 const newOwner = detectVcOwner(oldChannelId);
                                 if (newOwner === clientUserId) {
                                     console.log("Client became owner naturally, updating tracking");
@@ -500,7 +480,7 @@ export default definePlugin({
                     // Check if any other owner left while client is in the channel
                     else if (clientCurrentChannel === oldChannelId && guildId && isGuildAllowed(guildId) && isCustomVoiceChannel(oldChannelId)) {
                         // Update tracking to see if ownership changed
-                        scheduleTimeout(() => {
+                        setTimeout(() => {
                             const previousOwner = currentVcOwners.get(oldChannelId);
                             updateVcOwnerTracking(oldChannelId);
                             const newOwner = currentVcOwners.get(oldChannelId);
@@ -524,7 +504,7 @@ export default definePlugin({
                     const clientCurrentChannel = VoiceStateStore.getVoiceStateForUser(clientUserId)?.channelId;
 
                     if (clientCurrentChannel === channelId && guildId && isGuildAllowed(guildId) && isCustomVoiceChannel(channelId)) {
-                        scheduleTimeout(() => {
+                        setTimeout(() => {
                             updateVcOwnerTracking(channelId);
                             console.log(`Refreshed VC owner tracking for channel ${channelId} - new user joined`);
                         }, 1000);

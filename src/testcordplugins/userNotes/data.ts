@@ -12,7 +12,6 @@ import {
     set,
     setMany,
 } from "@api/DataStore";
-import { sleep } from "@utils/misc";
 import { UserUtils, useState } from "@webpack/common";
 
 const NotesStore = createStore("UserNotesData", "UserNotesStore");
@@ -78,7 +77,7 @@ const fetchUser = async (userId: string) => {
 
             if (!wait) break;
 
-            await sleep(wait * 1000 + 50);
+            await new Promise(resolve => setTimeout(resolve, wait * 1000 + 50));
         }
     }
 };

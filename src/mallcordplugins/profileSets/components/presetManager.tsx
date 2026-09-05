@@ -186,6 +186,8 @@ export function PresetManager({ section, guildId }: PresetManagerProps) {
                 >
                     Random
                 </Button>
+            </div>
+            <div className={cl("import")}>
                 <Button
                     size="small"
                     variant="secondary"

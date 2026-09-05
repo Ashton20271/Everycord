@@ -41,7 +41,6 @@ const EXE_FALLBACK_UPLOADER = "GoFile";
 // Note: This does NOT limit upload file size - files stream directly from disk with no memory limit
 // This only limits the JSON/text response from the upload service (1MB is plenty for any valid response)
 const MAX_RESPONSE_SIZE = 1 * 1024 * 1024;
-const MAX_BUFFER_UPLOAD_BYTES = 1024 * 1024 * 1024;
 
 // Nitro upload limits (used to decide whether to use Discord's native upload)
 const NITRO_LIMITS: Record<string, number> = {
@@ -248,7 +247,7 @@ function navigateJsonPath(obj: any, pathParts: string[]): any {
         }
 
         // Handle array index notation: "files[0]" -> access files then index 0
-        const arrayMatch = part.match(/^([^[]+)\[(\d+)\]$/);
+        const arrayMatch = part.match(/^([^\[]+)\[(\d+)\]$/);
         if (arrayMatch) {
             const [, key, index] = arrayMatch;
             if (key) {
@@ -449,21 +448,6 @@ async function raceToFirstSuccess<T>(
                 });
         }
     });
-}
-
-function cancelUploadById(uploadId: string) {
-    cancelledUploads.add(uploadId);
-    const activeUpload = activeRequests.get(uploadId);
-    if (!activeUpload) return;
-
-    activeUpload.cleanup();
-    activeRequests.delete(uploadId);
-}
-
-function cancelBackgroundRetries(retries: Array<{ uploadId: string }>, keepUploadId?: string) {
-    for (const retry of retries) {
-        if (retry.uploadId !== keepUploadId) cancelUploadById(retry.uploadId);
-    }
 }
 
 /**
@@ -2191,8 +2175,6 @@ export async function uploadFileBuffer(
 
     try {
         const fileSize = buffer.byteLength;
-        if (fileSize > MAX_BUFFER_UPLOAD_BYTES) throw new Error("File is too large to upload from memory.");
-
         nativeLog.info(`[BigFileUpload] Uploading from buffer: ${fileName} (${(fileSize / 1024 / 1024).toFixed(1)}MB)`);
 
         // Define fallback uploaders in order based on user's preference
@@ -2255,7 +2237,7 @@ export async function uploadFileBuffer(
         // Helper function to attempt upload with a specific uploader
         // Returns URL on success, throws on failure
         // isBackgroundRetry: if true, don't update progress (to avoid interference)
-        const tryUploader = async (uploader: string, isBackgroundRetry = false, attemptUploadId = uploadId): Promise<string> => {
+        const tryUploader = async (uploader: string, isBackgroundRetry = false): Promise<string> => {
             let uploadResult: string;
 
             switch (uploader) {
@@ -2265,7 +2247,7 @@ export async function uploadFileBuffer(
                         buffer,
                         fileName,
                         uploaderSettings.gofileToken,
-                        attemptUploadId,
+                        isBackgroundRetry ? undefined : uploadId,
                         uploaderSettings.uploadTimeout
                     );
                     if (gofileResult.status === "ok" && gofileResult.data) {
@@ -2287,7 +2269,7 @@ export async function uploadFileBuffer(
                         fileName,
                         mimeType || "application/octet-stream",
                         uploaderSettings.catboxUserHash || "",
-                        attemptUploadId,
+                        isBackgroundRetry ? undefined : uploadId,
                         uploaderSettings.uploadTimeout
                     );
                     break;
@@ -2299,7 +2281,7 @@ export async function uploadFileBuffer(
                         fileName,
                         mimeType || "application/octet-stream",
                         uploaderSettings.litterboxTime || "1h",
-                        attemptUploadId,
+                        isBackgroundRetry ? undefined : uploadId,
                         uploaderSettings.uploadTimeout
                     );
                     break;
@@ -2309,7 +2291,7 @@ export async function uploadFileBuffer(
                         event,
                         buffer,
                         fileName,
-                        attemptUploadId,
+                        isBackgroundRetry ? undefined : uploadId,
                         uploaderSettings.uploadTimeout
                     );
                     break;
@@ -2320,7 +2302,7 @@ export async function uploadFileBuffer(
                         buffer,
                         fileName,
                         uploaderSettings.zeroX0Expires,
-                        attemptUploadId,
+                        isBackgroundRetry ? undefined : uploadId,
                         uploaderSettings.uploadTimeout
                     );
                     break;
@@ -2330,7 +2312,7 @@ export async function uploadFileBuffer(
                         event,
                         buffer,
                         fileName,
-                        attemptUploadId,
+                        isBackgroundRetry ? undefined : uploadId,
                         uploaderSettings.uploadTimeout
                     );
                     break;
@@ -2340,7 +2322,7 @@ export async function uploadFileBuffer(
                         event,
                         buffer,
                         fileName,
-                        attemptUploadId,
+                        isBackgroundRetry ? undefined : uploadId,
                         uploaderSettings.uploadTimeout
                     );
                     break;
@@ -2350,7 +2332,7 @@ export async function uploadFileBuffer(
                         event,
                         buffer,
                         fileName,
-                        attemptUploadId,
+                        isBackgroundRetry ? undefined : uploadId,
                         uploaderSettings.uploadTimeout
                     );
                     break;
@@ -2397,7 +2379,7 @@ export async function uploadFileBuffer(
         };
 
         // Track background retry promises: { uploader, promise }
-        const backgroundRetries: Array<{ uploader: string; uploadId: string; promise: Promise<{ url: string; uploader: string; uploadId: string } | null> }> = [];
+        const backgroundRetries: Array<{ uploader: string; promise: Promise<{ url: string; uploader: string } | null> }> = [];
 
         let lastError: Error | null = null;
         const attemptedUploaders: string[] = [];
@@ -2420,7 +2402,6 @@ export async function uploadFileBuffer(
                 const backgroundWinner = await raceToFirstSuccess(backgroundRetries.map(r => r.promise));
                 if (backgroundWinner) {
                     nativeLog.info(`[BigFileUpload] ✅ Background retry succeeded with ${backgroundWinner.uploader}!`);
-                    cancelBackgroundRetries(backgroundRetries, backgroundWinner.uploadId);
                     let finalUrl = backgroundWinner.url;
                     if (uploaderSettings.useEmbedsVideo === "Yes") {
 						finalUrl = "https://embeds.video/" + backgroundWinner.url;
@@ -2456,7 +2437,6 @@ export async function uploadFileBuffer(
 
                 // Keep progress for completion message - renderer will clear it via completeUpload()
                 nativeLog.info(`[BigFileUpload] ✅ Upload successful with ${uploader}! File: ${fileName} (${(fileSize / 1024 / 1024).toFixed(2)}MB) → ${uploadResult}`);
-                cancelBackgroundRetries(backgroundRetries);
 
                 return {
                     success: true,
@@ -2513,24 +2493,19 @@ export async function uploadFileBuffer(
                 // Start background retry for this failed uploader (only once, not for Custom)
                 if (uploader !== "Custom" && !backgroundRetries.some(r => r.uploader === uploader)) {
                     nativeLog.info(`[BigFileUpload] Starting background retry for ${uploader}`);
-                    const backgroundUploadId = `upload-${crypto.randomUUID()}`;
-                    const retryPromise = (async (): Promise<{ url: string; uploader: string; uploadId: string } | null> => {
+                    const retryPromise = (async (): Promise<{ url: string; uploader: string } | null> => {
                         // Small delay to let the next primary uploader get a head start
                         await new Promise(r => setTimeout(r, 1000));
-                        if (cancelledUploads.has(backgroundUploadId)) {
-                            cancelledUploads.delete(backgroundUploadId);
-                            return null;
-                        }
                         try {
-                            const url = await tryUploader(uploader, true, backgroundUploadId);
+                            const url = await tryUploader(uploader, true);
                             nativeLog.info(`[BigFileUpload] Background retry succeeded for ${uploader}`);
-                            return { url, uploader, uploadId: backgroundUploadId };
+                            return { url, uploader };
                         } catch (retryError) {
                             nativeLog.debug(`[BigFileUpload] Background retry failed for ${uploader}:`, retryError);
                             return null;
                         }
                     })();
-                    backgroundRetries.push({ uploader, uploadId: backgroundUploadId, promise: retryPromise });
+                    backgroundRetries.push({ uploader, promise: retryPromise });
                 }
 
                 // Reset progress for next attempt
@@ -2570,11 +2545,10 @@ export async function uploadFileBuffer(
                     ]);
                     if (finalCheck) {
                         nativeLog.info(`[BigFileUpload] ✅ Background retry saved the day with ${finalCheck.uploader}!`);
-                        cancelBackgroundRetries(backgroundRetries, finalCheck.uploadId);
                         let finalUrl = finalCheck.url;
                         if (uploaderSettings.useEmbedsVideo === "Yes") {
-                            finalUrl = "https://embeds.video/" + finalCheck.url;
-                        }
+						    finalUrl = "https://embeds.video/" + finalCheck.url;
+					    }
                         if (uploaderSettings.autoFormat === "Yes") {
                             finalUrl = `[${fileName}](${finalUrl})`;
                         }

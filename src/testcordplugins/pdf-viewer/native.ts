@@ -12,7 +12,6 @@ const ALLOWED_HOSTS = new Set([
 ]);
 
 const PDF_MAGIC = [0x25, 0x50, 0x44, 0x46];
-const FETCH_TIMEOUT_MS = 30000;
 
 function checkUrl(rawUrl: string) {
     const url = new URL(rawUrl);
@@ -29,15 +28,11 @@ function checkUrl(rawUrl: string) {
 
 export async function fetchPdf(_: IpcMainInvokeEvent, rawUrl: string, maxBytes: number) {
     const url = checkUrl(rawUrl);
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
-    try {
-        const res = await fetch(url, {
-            redirect: "manual",
-            signal: controller.signal,
-            headers: { Accept: "application/pdf,*/*;q=0.1" },
-        });
+    const res = await fetch(url, {
+        redirect: "manual",
+        headers: { Accept: "application/pdf,*/*;q=0.1" },
+    });
 
     if (res.status >= 300 && res.status < 400) throw new Error("CDN tried to redirect, refusing");
     if (!res.ok) throw new Error(`CDN returned ${res.status}`);
@@ -73,8 +68,5 @@ export async function fetchPdf(_: IpcMainInvokeEvent, rawUrl: string, maxBytes: 
         if (out[i] !== PDF_MAGIC[i]) throw new Error("Downloaded data is not a valid PDF");
     }
 
-        return out;
-    } finally {
-        clearTimeout(timeout);
-    }
+    return out;
 }

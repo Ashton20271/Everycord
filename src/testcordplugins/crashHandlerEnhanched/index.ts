@@ -296,19 +296,12 @@ function getMemoryUsage(): any {
     return null;
 }
 
-let _crashLogsCache: CrashReport[] | null = null;
-let _crashLogsRaw: string | null = null;
 function getCrashLogs(): CrashReport[] {
-    const raw = settings.store.crashLogs || "[]";
-    if (raw === _crashLogsRaw && _crashLogsCache) return _crashLogsCache;
     try {
-        const parsed = JSON.parse(raw);
-        _crashLogsCache = Array.isArray(parsed) ? parsed : [];
+        return JSON.parse(settings.store.crashLogs || "[]");
     } catch {
-        _crashLogsCache = [];
+        return [];
     }
-    _crashLogsRaw = raw;
-    return _crashLogsCache;
 }
 
 function saveCrashLogs(logs: CrashReport[]): void {
@@ -316,24 +309,16 @@ function saveCrashLogs(logs: CrashReport[]): void {
         const maxLogs = settings.store.maxLogEntries;
         const trimmedLogs = logs.slice(-maxLogs);
         settings.store.crashLogs = JSON.stringify(trimmedLogs);
-        _crashLogsCache = null;
-        _crashLogsRaw = null;
     } catch (err) {
         CrashHandlerLogger.error("Failed to save crash logs:", err);
     }
 }
 
-let _crashStatsCache: CrashStatistics | null = null;
-let _crashStatsRaw: string | null = null;
 function getCrashStatistics(): CrashStatistics {
-    const raw = settings.store.crashStats || "{}";
-    if (raw === _crashStatsRaw && _crashStatsCache) return _crashStatsCache;
     try {
-        _crashStatsCache = JSON.parse(raw);
-        _crashStatsRaw = raw;
-        return _crashStatsCache!;
+        return JSON.parse(settings.store.crashStats || "{}");
     } catch {
-        _crashStatsCache = {
+        return {
             totalCrashes: 0,
             recoveredCrashes: 0,
             failedRecoveries: 0,
@@ -342,8 +327,6 @@ function getCrashStatistics(): CrashStatistics {
             crashFrequency: []
         };
     }
-    _crashStatsRaw = raw;
-    return _crashStatsCache;
 }
 
 function saveCrashStatistics(stats: CrashStatistics): void {
@@ -489,23 +472,6 @@ function stopPerformanceMonitoring(): void {
     }
 }
 
-function isDiscordHookError(errorState: any): boolean {
-    let msg: string;
-    const err = errorState?.error;
-    if (err instanceof Error) {
-        msg = err.message;
-    } else if (typeof err === "string") {
-        msg = err;
-    } else if (err && typeof err === "object") {
-        msg = String(err.message ?? err);
-    } else {
-        return false;
-    }
-    return /invalid hook call/i.test(msg)
-        || /should have a queue/i.test(msg)
-        || /Cannot read properties of null \(reading 'current'\)/.test(msg);
-}
-
 export default definePlugin({
     name: "CrashHandlerEnhanced",
     description: "Advanced crash handling with detailed logging, statistics, preventive measures, and intelligent recovery",
@@ -517,7 +483,6 @@ export default definePlugin({
     patches: [
         {
             find: "#{intl::ERRORS_UNEXPECTED_CRASH}",
-            noWarn: true,
             replacement: {
                 match: /this\.setState\((.+?)\)/,
                 replace: "$self.handleCrash(this,$1);"
@@ -543,11 +508,6 @@ export default definePlugin({
 
     handleCrash(_this: any, errorState: any) {
         _this.setState(errorState);
-
-        if (isDiscordHookError(errorState)) {
-            CrashHandlerLogger.debug("Discord hook error detected, skipping crash recovery to avoid disrupting context menus.");
-            return;
-        }
 
         crashCount++;
         const now = Date.now();

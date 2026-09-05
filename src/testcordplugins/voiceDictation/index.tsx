@@ -11,7 +11,7 @@ import { showApiKeyWarning } from "@utils/apiKeyWarning";
 import definePlugin, { OptionType } from "@utils/types";
 import { ComponentDispatch, MediaEngineStore, React, showToast, Toasts, useEffect, useRef, useState } from "@webpack/common";
 
-import { getGroqKey } from "../TestcordAI/groqManager";
+import { getGroqKey } from "../nightcordAI/groqManager";
 
 // ── Settings ──────────────────────────────────────────────────────────────────
 
@@ -85,7 +85,7 @@ async function transcribe(blob: Blob): Promise<string> {
     const apiKey = await getGroqKey();
 
     if (!apiKey) {
-        throw new Error("API key missing — Configure your key in Settings → TestcordAI");
+        throw new Error("API key missing — Configure your key in Settings → NightcordAI");
     }
 
     const form = new FormData();

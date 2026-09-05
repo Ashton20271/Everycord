@@ -13,7 +13,7 @@ import { Input } from "./Input";
 import { SettingsRow, SettingsSection } from "./SettingsSection";
 
 export function ServerConfig() {
-    const reactiveSettings = settings.use(["isLoggedIn"]);
+    const reactiveSettings = settings.use();
 
     return <SettingsSection title="Login to Navidrome" className={cl("server-config-container")}>
         <SettingsRow>

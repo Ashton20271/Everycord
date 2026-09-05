@@ -14,7 +14,8 @@ import { Switch } from "@components/Switch";
 import { classNameFactory } from "@utils/css";
 import { ModalCloseButton, ModalContent, ModalHeader, ModalRoot, ModalSize, openModal } from "@utils/modal";
 import definePlugin, { OptionType } from "@utils/types";
-import { Button, Forms, TabBar, Text, TextInput, Toasts, useEffect, useMemo, useRef, UserStore, useState } from "@webpack/common";
+import { Button, Forms, TabBar, Text, TextInput, Toasts, useEffect, useMemo, useRef, useState } from "@webpack/common";
+import { UserStore } from "@webpack/common";
 
 const cl = classNameFactory("vc-as-");
 const MIN_INTERVAL = 5, MAX_INTERVAL = 300, DEFAULT_INTERVAL = 10, START_DELAY = 3000;
@@ -74,21 +75,6 @@ const settings = definePluginSettings({
     autoStart: { type: OptionType.BOOLEAN, description: "Start automatically when Discord loads", default: false }
 });
 
-let _statusesCache: StatusStep[] | null = null;
-let _statusesRaw: string | null = null;
-function getParsedStatuses(): StatusStep[] {
-    const raw = settings.store.statuses;
-    if (raw === _statusesRaw && _statusesCache) return _statusesCache;
-    try {
-        const parsed = JSON.parse(raw);
-        _statusesCache = Array.isArray(parsed) ? parsed : [];
-    } catch {
-        _statusesCache = [];
-    }
-    _statusesRaw = raw;
-    return _statusesCache;
-}
-
 const state = { currentIndex: 0, interval: null as NodeJS.Timeout | null, isRunning: false, _started: false };
 
 function AnimatedStatusIcon({ color = "currentColor" }: { color?: string; }) {
@@ -132,7 +118,7 @@ export default definePlugin({
         } catch { return false; }
     },
     async begin(preset?: string) {
-        const all = getParsedStatuses();
+        const all = safeParse<StatusStep[]>(settings.store.statuses, []);
         if (!all.length) return Toasts.show({ message: "Add some statuses first!", type: Toasts.Type.FAILURE, id: Toasts.genId() });
         const items = preset ? all.filter(s => s.preset === preset) : all;
         if (!items.length) return Toasts.show({ message: `No "${preset}" statuses found`, type: Toasts.Type.FAILURE, id: Toasts.genId() });
@@ -144,7 +130,7 @@ export default definePlugin({
         Toasts.show({ message: "Animated status started!", type: Toasts.Type.SUCCESS, id: Toasts.genId() });
     },
     async next(preset?: string) {
-        const all = getParsedStatuses();
+        const all = safeParse<StatusStep[]>(settings.store.statuses, []);
         const items = preset ? all.filter(s => s.preset === preset) : all;
         if (!items.length) return this.stop();
         state.currentIndex = settings.store.randomize ? Math.floor(Math.random() * items.length) : (state.currentIndex + 1) % items.length;

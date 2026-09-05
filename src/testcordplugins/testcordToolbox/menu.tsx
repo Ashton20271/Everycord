@@ -71,7 +71,6 @@ export function buildPluginMenuEntries(includeEmpty = false) {
                         query={search}
                         onChange={setSearch}
                         ref={ref}
-                        autoFocus
                     />
                 )}
             />
@@ -184,26 +183,6 @@ export function buildPluginMenuEntries(includeEmpty = false) {
                 })
             }
         </>
-    );
-}
-
-function buildLiveFixToggle() {
-    const { plugins } = useSettings(["plugins.TestcordHelper.liveFix", "plugins.TestcordHelper.enabled"]);
-    const helper = plugins.TestcordHelper;
-    if (!helper?.enabled) return null;
-
-    const liveFix = Boolean(helper.liveFix);
-
-    return (
-        <Menu.MenuCheckboxItem
-            id="livefix-toggle"
-            label="LiveFix Debug Server"
-            checked={liveFix}
-            action={() => {
-                Settings.plugins.TestcordHelper.liveFix = !liveFix;
-                showToast(!liveFix ? "LiveFix enabled" : "LiveFix disabled");
-            }}
-        />
     );
 }
 
@@ -330,8 +309,6 @@ export function renderPopout(onClose: () => void) {
                 label="Open Notification Log"
                 action={openNotificationLogModal}
             />
-
-            {buildLiveFixToggle()}
 
             {buildThemeMenu()}
             {buildPluginMenu()}

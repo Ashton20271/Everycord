@@ -70,9 +70,7 @@ export async function saveSnipe(_event: IpcMainInvokeEvent, filename: string, co
     const dir = await getSniperDir();
     await ensureDirectoryExists(dir);
 
-    // basename strips any directory or traversal component the renderer sent. Callers only
-    // ever pass a flat name.
-    const filePath = path.join(dir, path.basename(filename));
+    const filePath = path.join(dir, filename);
     await writeFile(filePath, content, "utf-8");
 }
 

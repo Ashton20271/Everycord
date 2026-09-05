@@ -5,12 +5,15 @@
  */
 
 import { addContextMenuPatch, NavContextMenuPatchCallback, removeContextMenuPatch } from "@api/ContextMenu";
-import { FluxDispatcher, Menu, MessageActions, React, SortedGuildStore, Toasts, UserStore } from "@webpack/common";
+import { findStoreLazy } from "@webpack";
+import { FluxDispatcher, Menu, MessageActions, React, Toasts, UserStore } from "@webpack/common";
 
 import { openLogModal } from "../components/LogsModal";
 import { deleteMessageIDB } from "../db";
 import { settings } from "../index";
 import { addToXAndRemoveFromOpposite, ListType, removeFromX } from ".";
+
+const SortedGuildStore = findStoreLazy("SortedGuildStore");
 
 const idFunctions = {
     Folder: props =>

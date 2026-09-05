@@ -18,8 +18,7 @@ const HeaderBarIcon = LazyComponent(() => {
 export function OpenNotesDataButton() {
     return (
         <HeaderBarIcon
-            className="vc-plugin-icon-button vc-notes-toolbox-button"
-            iconClassName="vc-plugin-icon-button"
+            className="vc-notes-toolbox-button"
             onClick={() => openNotesDataModal()}
             tooltip={"Open Notes Data"}
             icon={NotesDataIcon}

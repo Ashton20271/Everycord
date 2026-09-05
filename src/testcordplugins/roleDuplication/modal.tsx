@@ -66,7 +66,7 @@ function CloneModal({ role, icon }: { role: Role; icon?: string | null; }) {
                 alignItems: "center"
             }}>
                 {guilds.map(g => (
-                    <Tooltip key={g.id} text={g.name}>
+                    <Tooltip text={g.name}>
                         {({ onMouseLeave, onMouseEnter }) => (
                             <div
                                 onMouseLeave={onMouseLeave}

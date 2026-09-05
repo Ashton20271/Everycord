@@ -173,4 +173,7 @@ export async function clearEvents(scope?: SurveillanceScope) {
 
 export async function trimEvents(limit: number) {
     await loadEvents(limit);
+    events = events.slice(0, Math.max(MIN_EVENTS, limit));
+    await persistNow();
+    notify();
 }

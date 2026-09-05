@@ -41,7 +41,6 @@ const START_DELAY_MS = 2000;
 const MS_PER_MINUTE = 60_000;
 const DEFAULT_CACHE_MINUTES = 15;
 const DEFAULT_TIMEOUT_MS = 5000;
-const DNS_CACHE_MAX = 256;
 
 const DEFAULT_DOMAINS = [
     "discord.com",
@@ -374,7 +373,6 @@ export default definePlugin({
         let fetchPatched: typeof window.fetch | null = null;
         let isActive = false;
         let startTimer: number | undefined;
-        let startGeneration = 0;
         const dnsCache = new Map<string, CacheEntry>();
         const statistics: DnsStatistics = {
             totalRequests: 0,
@@ -392,11 +390,6 @@ export default definePlugin({
                 hostname: result.hostname,
                 server: result.endpoint
             });
-            while (dnsCache.size > DNS_CACHE_MAX) {
-                const oldest = dnsCache.keys().next().value;
-                if (!oldest) break;
-                dnsCache.delete(oldest);
-            }
         }
 
         async function resolveHostname(hostname: string): Promise<CacheEntry | null> {
@@ -497,7 +490,6 @@ export default definePlugin({
             isActive: () => isActive,
 
             async start() {
-                const generation = ++startGeneration;
                 if (isActive) {
                     log.warn("Plugin is already active.");
                     return;
@@ -514,7 +506,6 @@ export default definePlugin({
 
                 if (settings.store.preloadOnStart) {
                     await preloadRecords();
-                    if (generation !== startGeneration) return;
                 }
 
                 if (settings.store.rewriteFetch) {
@@ -533,10 +524,14 @@ export default definePlugin({
             },
 
             stop() {
-                startGeneration++;
                 if (startTimer != null) {
                     window.clearTimeout(startTimer);
                     startTimer = undefined;
+                }
+
+                if (!isActive) {
+                    log.warn("Plugin is not active.");
+                    return;
                 }
 
                 if (fetchPatched && window.fetch === fetchPatched) {
@@ -548,10 +543,6 @@ export default definePlugin({
 
                 fetchPatched = null;
                 dnsCache.clear();
-                if (!isActive) {
-                    log.warn("Plugin is not active.");
-                    return;
-                }
                 isActive = false;
 
                 showPluginToast(`${PLUGIN_NAME} deactivated.`);

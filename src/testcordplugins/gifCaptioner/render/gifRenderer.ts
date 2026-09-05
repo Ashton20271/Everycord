@@ -14,8 +14,6 @@ import { getLines } from "../utils/canvas";
 import { getMaxFileSize } from "../utils/permissions";
 import { uploadFile } from "../utils/upload";
 
-const MAX_CANVAS_PIXELS = 4_000_000;
-
 function rgb888ToRgb565(r: number, g: number, b: number): number {
     return ((r << 8) & 0xf800) | ((g << 3) & 0x07e0) | (b >> 3);
 }
@@ -81,7 +79,7 @@ export default class GifRenderer {
 
         const fullSize = fullHeight * this.width;
         const sizeEstimate = fullSize * frames;
-        const scaleFactor = Math.max(1, Math.sqrt(sizeEstimate / getMaxFileSize()), Math.sqrt(fullSize / MAX_CANVAS_PIXELS));
+        const scaleFactor = Math.max(1, Math.sqrt(sizeEstimate / getMaxFileSize()));
 
         const newWidth = Math.max(1, Math.floor(this.width / scaleFactor));
         const newHeight = Math.max(1, Math.floor(this.height / scaleFactor));
@@ -146,13 +144,8 @@ export default class GifRenderer {
         }
 
         this.gif.finish();
-        const bytes = this.gif.bytesView() as Uint8Array<ArrayBuffer>;
+        const bytes = Uint8Array.from(this.gif.bytesView());
         const file = new File([bytes], "rendered.gif", { type: "image/gif" });
-        if (file.size > getMaxFileSize()) {
-            showError("Rendered GIF is too large to upload.");
-            return;
-        }
-
         uploadFile(file);
     }
 

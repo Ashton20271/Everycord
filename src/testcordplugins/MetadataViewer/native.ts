@@ -20,13 +20,11 @@ const ALLOWED_ORIGINS = [
 ];
 
 const MAX_SIZE = 50 * 1024 * 1024; // 50MB
-const FETCH_TIMEOUT_MS = 15000;
 
 export async function fetchAttachment(
     _event: IpcMainInvokeEvent,
     url: unknown
 ): Promise<FetchResult> {
-    let timeoutId: ReturnType<typeof setTimeout> | undefined;
     try {
         if (typeof url !== "string") {
             return { success: false, error: "Invalid URL parameter" };
@@ -48,24 +46,22 @@ export async function fetchAttachment(
         }
 
         const controller = new AbortController();
-        timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+        const timeoutId = setTimeout(() => controller.abort(), 15000); // 15-second timeout
 
         const res = await fetch(url, { signal: controller.signal });
+        clearTimeout(timeoutId);
 
         if (!res.ok) {
-            clearTimeout(timeoutId);
             return { success: false, error: `HTTP status ${res.status}` };
         }
 
         const contentLength = res.headers.get("content-length");
         if (contentLength && parseInt(contentLength, 10) > MAX_SIZE) {
-            clearTimeout(timeoutId);
             return { success: false, error: "File exceeds size limit (50MB)" };
         }
 
         const reader = res.body?.getReader();
         if (!reader) {
-            clearTimeout(timeoutId);
             return { success: false, error: "Failed to read response body" };
         }
 
@@ -78,7 +74,6 @@ export async function fetchAttachment(
 
             if (totalSize + value.length > MAX_SIZE) {
                 await reader.cancel();
-                clearTimeout(timeoutId);
                 return { success: false, error: "File size limit exceeded during download" };
             }
 
@@ -93,10 +88,8 @@ export async function fetchAttachment(
             offset += chunk.length;
         }
 
-        clearTimeout(timeoutId);
         return { success: true, data: buffer };
     } catch (err: unknown) {
-        if (timeoutId) clearTimeout(timeoutId);
         return { success: false, error: err instanceof Error ? err.message : String(err) };
     }
 }

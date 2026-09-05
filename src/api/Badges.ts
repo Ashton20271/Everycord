@@ -62,28 +62,6 @@ export interface ProfileBadge {
 
 const Badges = new Set<ProfileBadge>();
 
-function getBadgeId(badge: Partial<ProfileBadge>, userId: string, index: number) {
-    return badge.id || `vc-badge-${badge.key ?? badge.description ?? badge.iconSrc ?? "badge"}-${userId}-${index}`
-        .replace(/[^a-z0-9_-]/gi, "_");
-}
-
-function isRenderableBadge(badge: Partial<ProfileBadge>) {
-    return typeof badge.component === "function"
-        || typeof badge.iconSrc === "string" && badge.iconSrc.length > 0;
-}
-
-function normalizeBadges(rawBadges: unknown[] | undefined, args: BadgeUserArgs, offset = 0) {
-    return (rawBadges ?? [])
-        .filter((badge): badge is Partial<ProfileBadge> => typeof badge === "object" && badge != null)
-        .map((badge, index) => ({
-            ...args,
-            ...badge,
-            id: getBadgeId(badge, args.userId, offset + index),
-            component: badge.component && ErrorBoundary.wrap(badge.component, { noop: true })
-        }))
-        .filter(isRenderableBadge);
-}
-
 /**
  * Register a new badge with the Badges API
  * @param badge The badge to register
@@ -112,7 +90,13 @@ export function _getBadges(args: BadgeUserArgs) {
             continue;
         }
 
-        const b = normalizeBadges(badge.getBadges ? badge.getBadges(args) : [badge], args, badges.length);
+        const b = badge.getBadges
+            ? badge.getBadges(args).map(badge => ({
+                ...args,
+                ...badge,
+                component: badge.component && ErrorBoundary.wrap(badge.component, { noop: true })
+            }))
+            : [{ ...args, ...badge }];
 
         if (badge.position === BadgePosition.START) {
             badges.unshift(...b);
@@ -121,21 +105,39 @@ export function _getBadges(args: BadgeUserArgs) {
         }
     }
 
-    const donorBadges = normalizeBadges(BadgeAPIPlugin.getDonorBadges(args.userId), args, badges.length);
-    const equicordDonorBadges = normalizeBadges(BadgeAPIPlugin.getEquicordDonorBadges(args.userId), args, badges.length);
-    const testcordCustomBadges = normalizeBadges(BadgeAPIPlugin.getTestCordCustomBadges(args.userId), args, badges.length);
-    const GlobalBadges = isPluginEnabled(globalBadges.name)
-        ? normalizeBadges(globalBadges.getGlobalBadges(args.userId), args, badges.length)
-        : [];
+    const donorBadges = BadgeAPIPlugin.getDonorBadges(args.userId);
+    const equicordDonorBadges = BadgeAPIPlugin.getEquicordDonorBadges(args.userId);
+    const GlobalBadges = isPluginEnabled(globalBadges.name) ? globalBadges.getGlobalBadges(args.userId) : false;
 
-    // Build final array with prepended groups in correct order
-    return [
-        ...testcordCustomBadges,
-        ...equicordDonorBadges,
-        ...donorBadges,
-        ...GlobalBadges,
-        ...badges
-    ];
+    // do globalbadges first so it shows before the contrib badges but after donor badges
+    if (GlobalBadges) {
+        badges.unshift(
+            ...GlobalBadges.map(badge => ({
+                ...args,
+                ...badge,
+            }))
+        );
+    }
+
+    if (donorBadges) {
+        badges.unshift(
+            ...donorBadges.map(badge => ({
+                ...args,
+                ...badge,
+            }))
+        );
+    }
+
+    if (equicordDonorBadges) {
+        badges.unshift(
+            ...equicordDonorBadges.map(badge => ({
+                ...args,
+                ...badge,
+            }))
+        );
+    }
+
+    return badges;
 }
 
 export interface BadgeUserArgs {

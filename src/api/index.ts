@@ -23,6 +23,7 @@ import * as $Commands from "./Commands";
 import * as $ContextMenu from "./ContextMenu";
 import * as $DataStore from "./DataStore";
 import * as $GifPickerContextMenu from "./GifPickerContextMenu";
+import * as $TestcordRequestCoordinator from "./TestcordRequestCoordinator";
 import * as $HeaderBar from "./HeaderBar";
 import * as $MemberListDecorators from "./MemberListDecorators";
 import * as $MessageAccessories from "./MessageAccessories";
@@ -33,7 +34,6 @@ import * as $MessageUpdater from "./MessageUpdater";
 import * as $NicknameIcons from "./NicknameIcons";
 import * as $Notices from "./Notices";
 import * as $Notifications from "./Notifications";
-import * as $PluginWorker from "./PluginWorker";
 import * as $UserArea from "./UserArea";
 export * as PluginManager from "./PluginManager";
 import * as $ProfileCollections from "./ProfileCollections";
@@ -42,7 +42,6 @@ import * as $ServerList from "./ServerList";
 import * as $Settings from "./Settings";
 import * as $Styles from "./Styles";
 import * as $SurfaceClasses from "./SurfaceClasses";
-import * as $TestcordRequestCoordinator from "./TestcordRequestCoordinator";
 import * as $Themes from "./Themes";
 import * as $UserSettings from "./UserSettings";
 
@@ -179,9 +178,12 @@ export const AudioPlayer = $AudioPlayer;
 export const UserArea = $UserArea;
 
 /**
- * Just used to identify if user is on Equicord as Vencord doesn't have this.
+ * Just used to identify if user is on OpenCord as Vencord doesn't have this.
  */
-export const isEquicord = true;
+export const isOpenCord = true;
+
+/** @deprecated Use {@link isOpenCord}. */
+export const isEquicord = isOpenCord;
 
 /**
  * An API allowing you to add other collections where discords game collection is.
@@ -194,30 +196,12 @@ export const ProfileCollections = $ProfileCollections;
 export const ProfileSections = $ProfileSections;
 
 /**
-/**
- * An API allowing you to run plugin code in a separate thread
- * via Web Workers. Prevents heavy computation from lagging Discord's UI.
- *
- * @example
- * import { PluginWorker } from "@api/index";
- *
- * // Run a heavy function off the main thread
- * const result = await PluginWorker.exec((nums: number[]) => {
- *   return nums.sort((a, b) => a - b);
- * }, [3, 1, 4, 1, 5, 9, 2, 6]);
- *
- * // Create a persistent worker for multiple calls
- * const worker = PluginWorker.WorkerHandle.create();
- * worker.init((data: string) => data.toUpperCase());
- * const upper = await worker.post("hello");
- * worker.terminate();
- */
-export const PluginWorker = $PluginWorker;
-
-/**
  * An API allowing plugins to add items to the GIF picker right-click context menu
  * without conflicting with each other.
  */
 export const GifPickerContextMenu = $GifPickerContextMenu;
 
-export const TestcordRequestCoordinator = $TestcordRequestCoordinator;
+/**
+ * TTL-cached request coordinator used by TestCord plugins.
+ */
+export const TestcordRequestCoordinator = $TestcordRequestCoordinator.TestcordRequestCoordinator;

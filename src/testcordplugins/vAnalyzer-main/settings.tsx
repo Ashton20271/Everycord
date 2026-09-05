@@ -42,6 +42,12 @@ export const settings = definePluginSettings(
             default: "",
             placeholder: "Enter your VirusTotal API key..."
         },
+        dangecordApiKey: {
+            type: OptionType.STRING,
+            description: "DangeCord API Key",
+            default: "",
+            placeholder: "Enter your DangeCord API key..."
+        },
         hybridAnalysisApiKey: {
             type: OptionType.STRING,
             description: "Hybrid Analysis API Key",

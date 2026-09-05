@@ -8,7 +8,6 @@ import { findGroupChildrenByChildId, NavContextMenuPatchCallback } from "@api/Co
 import { showNotification } from "@api/Notifications";
 import { definePluginSettings } from "@api/Settings";
 import { TestcordDevs } from "@utils/constants";
-import { sleep } from "@utils/misc";
 import definePlugin, { OptionType } from "@utils/types";
 import { Channel } from "@vencord/discord-types";
 import { findStoreLazy } from "@webpack";
@@ -191,7 +190,7 @@ async function leaveAllGroups() {
 
             // Delay to avoid rate limiting
             if (settings.store.delayBetweenLeaves > 0) {
-                await sleep(settings.store.delayBetweenLeaves);
+                await new Promise(resolve => setTimeout(resolve, settings.store.delayBetweenLeaves));
             }
         }
 

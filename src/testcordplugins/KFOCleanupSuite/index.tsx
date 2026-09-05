@@ -12,7 +12,6 @@ import {
 } from "@api/Commands";
 import { definePluginSettings } from "@api/Settings";
 import { TestcordDevs } from "@utils/constants";
-import { sleep } from "@utils/misc";
 import definePlugin, { OptionType } from "@utils/types";
 import { RestAPI, UserStore } from "@webpack/common";
 
@@ -94,6 +93,10 @@ function getDeleteState(channelId: string): ChannelState {
         };
     }
     return deleteStates[channelId];
+}
+
+async function sleep(ms: number) {
+    return new Promise(r => setTimeout(r, ms));
 }
 
 function getGuildId(ctx: any): string | null {

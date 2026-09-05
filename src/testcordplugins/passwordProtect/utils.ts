@@ -5,7 +5,6 @@
  */
 
 import { getCurrentChannel } from "@utils/discord";
-import { sleep } from "@utils/misc";
 import { NavigationRouter } from "@webpack/common";
 
 export async function sha256(message) {
@@ -22,6 +21,6 @@ export function isChannelCurrent(channelId: string) {
 export async function reloadChannel() {
     const channel = getCurrentChannel();
     NavigationRouter.transitionTo("/channels/@me");
-    await sleep(0);
+    await new Promise(r => setTimeout(r, 0));
     NavigationRouter.transitionTo(`/channels/${channel?.guild_id || "@me"}/${channel?.id}`);
 }

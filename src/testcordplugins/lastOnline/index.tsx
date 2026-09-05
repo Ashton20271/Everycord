@@ -4,29 +4,16 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-import * as DataStore from "@api/DataStore";
-import { definePluginSettings } from "@api/Settings";
 import { TestcordDevs } from "@utils/constants";
 import { Logger } from "@utils/Logger";
-import definePlugin, { OptionType } from "@utils/types";
+import definePlugin from "@utils/types";
 import { User } from "@vencord/discord-types";
-import { React } from "@webpack/common";
 
 const fs = (window as any).require?.("fs");
 const os = (window as any).require?.("os");
 const pathModule = (window as any).require?.("path");
 
 const log = new Logger("LastOnline");
-const DATASTORE_KEY = "LastOnline_onlineList";
-
-const settings = definePluginSettings({
-    showInServers: {
-        type: OptionType.BOOLEAN,
-        description: "Also show the last online indicator in server member lists",
-        default: false,
-        restartNeeded: true
-    }
-});
 
 interface PresenceStatus {
     hasBeenOnline: boolean;
@@ -39,11 +26,7 @@ let saveTimer: ReturnType<typeof setTimeout> | null = null;
 
 function getFilePath() {
     if (!fs || !os || !pathModule) return null;
-    try {
-        return pathModule.join(os.homedir(), "Downloads", "onlinelist.json");
-    } catch {
-        return null;
-    }
+    return pathModule.join(os.homedir(), "Downloads", "onlinelist.json");
 }
 
 function pruneOnlineList() {
@@ -57,7 +40,6 @@ function pruneOnlineList() {
 
 function writeOnlineList() {
     const data = Object.fromEntries(recentlyOnlineList);
-    void DataStore.set(DATASTORE_KEY, data).catch(e => log.error("Failed to save to DataStore:", e));
     const filePath = getFilePath();
     if (fs && filePath) {
         try {
@@ -80,27 +62,14 @@ function saveOnlineList() {
     }, 2000);
 }
 
-async function loadOnlineList() {
-    try {
-        const storedData = await DataStore.get<Record<string, PresenceStatus>>(DATASTORE_KEY);
-        if (storedData && typeof storedData === "object") {
-            for (const [userId, status] of Object.entries(storedData)) {
-                recentlyOnlineList.set(userId, status);
-            }
-        }
-    } catch (e) {
-        log.error("Failed to load from DataStore:", e);
-    }
-
+function loadOnlineList() {
     const filePath = getFilePath();
     if (fs && filePath) {
         try {
             if (fs.existsSync(filePath)) {
                 const data = JSON.parse(fs.readFileSync(filePath, "utf-8"));
                 for (const [userId, status] of Object.entries(data)) {
-                    if (!recentlyOnlineList.has(userId)) {
-                        recentlyOnlineList.set(userId, status as PresenceStatus);
-                    }
+                    recentlyOnlineList.set(userId, status as PresenceStatus);
                 }
             }
         } catch (e) {
@@ -148,17 +117,14 @@ function formatTime(time: number) {
 
 export default definePlugin({
     name: "LastOnline",
-    description: "Adds a last online indicator under usernames in your DM list",
+    description: "Adds a last online indicator under usernames in your DM list and guild member list",
     tags: ["Friends", "Utility"],
     authors: [TestcordDevs.x2b],
-    settings,
     flux: {
-        PRESENCE_UPDATES({ updates }: { updates?: Array<{ user?: { id?: string; }; status?: string; }>; }) {
-            if (!Array.isArray(updates)) return;
+        PRESENCE_UPDATES({ updates }) {
+            log.debug(`Received PRESENCE_UPDATES with ${updates.length} updates`);
             updates.forEach(update => {
-                if (update?.user?.id) {
-                    handlePresenceUpdate(update.status ?? "offline", update.user.id);
-                }
+                handlePresenceUpdate(update.status, update.user.id);
             });
         }
     },
@@ -166,34 +132,26 @@ export default definePlugin({
     start() {
         log.info("LastOnline plugin started");
 
-        void loadOnlineList();
+        loadOnlineList();
 
         try {
             // Lazy import to avoid early execution
             const { addMemberListDecorator } = require("@api/MemberListDecorators");
 
-            // DM member list is the default surface
+            // Add decorator to member list
             addMemberListDecorator("last-online-indicator", props => {
                 if (!props.user) {
+                    log.debug(`Decorator called with no user, type: ${props.type}`);
                     return null;
                 }
+                log.debug(`Decorator called for user ${props.user.username}#${props.user.discriminator}, type: ${props.type}`);
                 if (this.shouldShowRecentlyOffline(props.user)) {
+                    log.debug(`Showing last online for user ${props.user.username}#${props.user.discriminator}`);
                     return this.buildRecentlyOffline(props.user);
                 }
+                log.debug(`Not showing last online for user ${props.user.username}#${props.user.discriminator}`);
                 return null;
-            }, "dms");
-
-            if (settings.store.showInServers) {
-                addMemberListDecorator("last-online-indicator-servers", props => {
-                    if (!props.user) {
-                        return null;
-                    }
-                    if (this.shouldShowRecentlyOffline(props.user)) {
-                        return this.buildRecentlyOffline(props.user);
-                    }
-                    return null;
-                }, "guilds");
-            }
+            });
 
             log.info("LastOnline decorators added");
         } catch (e) {
@@ -204,7 +162,6 @@ export default definePlugin({
         try {
             const { removeMemberListDecorator } = require("@api/MemberListDecorators");
             removeMemberListDecorator("last-online-indicator");
-            removeMemberListDecorator("last-online-indicator-servers");
         } catch (e) {
             log.error("Failed to remove member list decorator:", e);
         }
@@ -219,6 +176,7 @@ export default definePlugin({
     shouldShowRecentlyOffline(user: User) {
         const presenceStatus = recentlyOnlineList.get(user.id);
         if (!presenceStatus) {
+            log.debug(`No presence status found for user ${user.username}#${user.discriminator}`);
             return false;
         }
 
@@ -227,6 +185,7 @@ export default definePlugin({
             const timeSinceOffline = Date.now() - (presenceStatus.lastOffline || 0);
             // Only show if offline for less than 7 days (604800000 ms)
             if (timeSinceOffline > 604800000) {
+                log.debug(`User ${user.username}#${user.discriminator} offline too long (${Math.floor(timeSinceOffline / 86400000)} days), not showing indicator`);
                 return false;
             }
         }
@@ -253,17 +212,14 @@ export default definePlugin({
             text = `${formattedTime} ago`;
         }
 
-        return (
-            <div
-                style={{
-                    color: "var(--text-muted)",
-                    fontSize: "12px",
-                    lineHeight: "16px",
-                    marginTop: "2px"
-                }}
-            >
-                Last online <strong>{text}</strong>
-            </div>
-        );
+        const { React } = (globalThis as any).Vencord.Webpack.Common;
+        return React.createElement("div", {
+            style: {
+                color: "var(--text-muted)",
+                fontSize: "12px",
+                lineHeight: "16px",
+                marginTop: "2px"
+            }
+        }, "Last online ", React.createElement("strong", null, text));
     }
 });

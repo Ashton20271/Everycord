@@ -50,36 +50,3 @@ export interface NativeWebhookResponse {
     status: number;
     data: string;
 }
-
-export interface CaptchaProps {
-    captchaService?: string;
-    sitekey: string;
-    captchaSessionId?: string;
-    options: {
-        rqdata?: string;
-        rqtoken?: string;
-    };
-}
-
-export interface CaptchaResult {
-    captcha_key: string;
-    captcha_rqtoken?: string;
-    captcha_session_id?: string;
-}
-
-export interface NativeCaptchaResponse {
-    success: boolean;
-    token?: string;
-    error?: string;
-}
-
-export interface GiftCodeResolution {
-    store_listing?: {
-        sku?: {
-            name?: string;
-        };
-    };
-    subscription_plan?: {
-        name?: string;
-    };
-}

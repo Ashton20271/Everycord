@@ -150,10 +150,10 @@ function startNativeNotificationPolling() {
     if (nativeNotificationInterval !== null) return;
     // Poll immediately once to catch queued notifications
     void pollNativeNotifications();
-    // Poll every 2000ms for fallback notifications
+    // Poll every 500ms for faster fallback notifications
     nativeNotificationInterval = window.setInterval(() => {
         void pollNativeNotifications();
-    }, 2000);
+    }, 500);
 }
 
 function stopNativeNotificationPolling() {
@@ -1551,7 +1551,6 @@ export default definePlugin({
     patches: [
         {
             find: "formWithLoadedChatInput",
-            noWarn: true,
             replacement: {
                 // Insert progress bar before the form
                 // The actual webpack code: (0,i.jsxs)("form",{ref:this.inputFormRef,onSubmit:e4,className:
