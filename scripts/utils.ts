@@ -23,13 +23,7 @@ import { normalize as posixNormalize, sep as posixSep } from "path/posix";
 import { BigIntLiteral, CallExpression, createSourceFile, ExportDeclaration, Expression, Identifier, isArrayLiteralExpression, isAsExpression, isBigIntLiteral, isCallExpression, isExportAssignment, isExportDeclaration, isIdentifier, isNamedExports, isNoSubstitutionTemplateLiteral, isNumericLiteral, isObjectLiteralExpression, isParenthesizedExpression, isPropertyAccessExpression, isPropertyAssignment, isSatisfiesExpression, isStringLiteral, isVariableStatement, NamedDeclaration, NodeArray, ObjectLiteralExpression, PropertyAssignment, ScriptTarget, StringLiteral, SyntaxKind } from "typescript";
 
 import { getPluginTarget } from "./utils.mjs";
-
-let syncConfig: { sources: Array<{ local_dir: string; repo: string; branch: string; upstream_dirs: string[]; }>; } | null = null;
-try {
-    syncConfig = JSON.parse(readFileSync(".github/plugin-sync-config.json", "utf8"));
-} catch {
-    syncConfig = null;
-}
+import { PluginTarget, PluginTargets } from "@utils/pluginTargets";
 
 export interface Dev {
     name: string;
@@ -53,7 +47,7 @@ export interface PluginData {
     commands: Command[];
     required: boolean;
     enabledByDefault: boolean;
-    target: "discordDesktop" | "vesktop" | "equibop" | "desktop" | "web" | "dev";
+    target?: PluginTarget;
     filePath: string;
     dirName: string;
     isModified: boolean;
@@ -398,11 +392,8 @@ export async function parseFile(fileName: string, seen = new Set<string>(), entr
 
         const target = getPluginTarget(entryFileName);
         if (target) {
-            if (!["web", "discordDesktop", "vesktop", "equibop", "desktop", "dev"].includes(target)) {
-                console.warn(`[plugin-list] Skipping unknown target '${target}' for ${entryFileName}`);
-            } else {
-                data.target = target as any;
-            }
+            if (!PluginTargets.includes(target as PluginTarget)) throw fail(`invalid target ${target}`);
+            data.target = target as any;
         }
 
         data.filePath = posixNormalize(entryFileName)

@@ -193,7 +193,7 @@ const appendCssRuntime = readFile("dist/OpenCord.user.css", "utf-8").then(conten
 if (!process.argv.includes("--skip-extension")) {
     await Promise.all([
         appendCssRuntime,
-        buildExtension("chromium-unpacked", ["modifyResponseHeaders.json", "content.js", "manifest.json", "icon.png", "opencord-symbol-dark.svg"]),
+        buildExtension("chromium-unpacked", ["modifyResponseHeaders.json", "content.js", "manifest.json", "icon.png", "service-worker.js", "opencord-symbol-dark.svg"]),
         buildExtension("firefox-unpacked", ["background.js", "content.js", "manifestv2.json", "icon.png", "opencord-symbol-dark.svg"]),
     ]);
 

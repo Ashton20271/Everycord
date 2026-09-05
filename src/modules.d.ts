@@ -17,7 +17,9 @@
 */
 
 declare module "~plugins" {
+    import { PluginTarget } from "@utils/pluginTargets";
     const plugins: Record<string, import("./utils/types").Plugin>;
+
     export default plugins;
     export const PluginMeta: Record<string, {
         folderName: string;
@@ -26,7 +28,7 @@ declare module "~plugins" {
         sourceBranch?: string;
         sourceFolder?: string;
     }>;
-    export const ExcludedPlugins: Record<string, "web" | "discordDesktop" | "vesktop" | "equibop" | "desktop" | "dev">;
+    export const ExcludedPlugins: Record<string, PluginTarget>;
 }
 
 declare module "~git-hash" {

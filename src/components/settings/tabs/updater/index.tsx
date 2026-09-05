@@ -91,21 +91,23 @@ function Updater() {
                 Control how OpenCord keeps itself up to date. You can choose to update automatically in the background or be notified when new updates are available.
             </Paragraph>
 
-            <FormSwitch
-                title="Automatically update"
-                description="When enabled, OpenCord will automatically download and install updates in the background without asking for confirmation. You'll need to restart Discord to apply the changes."
-                value={settings.autoUpdate}
-                onChange={(v: boolean) => settings.autoUpdate = v}
-                hideBorder
-            />
-            <FormSwitch
-                value={settings.autoUpdateNotification}
-                onChange={(v: boolean) => settings.autoUpdateNotification = v}
-                title="Get notified when an automatic update completes"
-                description="Receive a notification when OpenCord finishes downloading an update in the background, so you know when to restart Discord."
-                disabled={!settings.autoUpdate}
-                hideBorder
-            />
+            <div className="vc-settings-switches">
+                <FormSwitch
+                    title="Automatically update"
+                    description="When enabled, Opencord will automatically download and install updates in the background without asking for confirmation. You'll need to restart Discord to apply the changes."
+                    value={settings.autoUpdate}
+                    onChange={(v: boolean) => settings.autoUpdate = v}
+                    hideBorder
+                />
+                <FormSwitch
+                    title="Get notified when an automatic update completes"
+                    description="Receive a notification when Opencord finishes downloading an update in the background, so you know when to restart Discord."
+                    value={settings.autoUpdateNotification}
+                    onChange={(v: boolean) => settings.autoUpdateNotification = v}
+                    disabled={!settings.autoUpdate}
+                    hideBorder
+                />
+            </div>
 
             <Divider className={Margins.top20} />
 
